@@ -84,6 +84,7 @@ fn main() -> anyhow::Result<()> {
     // The audio thread stops on Command::Quit; Core Audio's callbacks share its channel.
     let (inputs, receiver) = flume::unbounded::<Input>();
     ui::install(&app, inputs.clone(), scheme, !options.no_tray);
+    app.set_tab(options.tab);
 
     let make: MakeBackend = if options.mock {
         Box::new(|| Ok(Box::new(MockAudio::demo()) as Backend))

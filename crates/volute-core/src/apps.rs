@@ -74,8 +74,17 @@ fn name_of(session: &Session) -> String {
         .exe
         .as_deref()
         .and_then(Path::file_stem)
-        .map(|s| s.to_string_lossy().into_owned())
+        .map(|s| capitalise(&s.to_string_lossy()))
         .unwrap_or_else(|| format!("PID {}", session.pid))
+}
+
+/// A file name shown as a name: its first letter in capitals ("firefox" → "Firefox").
+fn capitalise(name: &str) -> String {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
 }
 
 /// Groups `sessions` into apps into `out`: expired sessions left out, playing apps first, then
@@ -151,7 +160,7 @@ mod tests {
         let c = session("3", 12, Some(r"C:\Spotify\Spotify.exe"), SessionState::Active);
         let mut apps = Vec::new();
         group(&[a, b, c], &mut apps);
-        assert_eq!(names(&apps), ["firefox", "Spotify"]);
+        assert_eq!(names(&apps), ["Firefox", "Spotify"]);
         let firefox = &apps[0];
         assert_eq!(firefox.sessions.len(), 2, "both processes in one row, whatever the case");
         assert_eq!(firefox.volume, 0.6, "the loudest session");
@@ -173,7 +182,7 @@ mod tests {
         ];
         let mut apps = Vec::new();
         group(&sessions, &mut apps);
-        assert_eq!(names(&apps), ["b", "Apple", "zoom", ""]);
+        assert_eq!(names(&apps), ["B", "Apple", "Zoom", ""]);
         assert!(apps[3].system_sounds(), "system sounds keep their own row, last");
     }
 

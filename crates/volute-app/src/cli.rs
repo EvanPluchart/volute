@@ -1,7 +1,7 @@
 //! Command-line flags. Test flags reach a state directly, for screenshots, benchmarks and tests.
 
 pub const USAGE: &str =
-    "usage: volute [--open] [--no-settings] [--no-tray] [--dark|--light] [--mock] [--flyout] [--about]";
+    "usage: volute [--open] [--no-settings] [--no-tray] [--dark|--light] [--mock] [--flyout] [--tab=mixer|devices] [--about]";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options {
@@ -18,6 +18,8 @@ pub struct Options {
     pub mock: bool,
     /// Opens the flyout at start, at the bottom right (screenshots).
     pub flyout: bool,
+    /// The main window's view at start: 0 the mixer, 1 the devices.
+    pub tab: i32,
     /// Opens the About window at start (screenshots).
     pub about: bool,
 }
@@ -34,6 +36,8 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--mock" => options.mock = true,
             "--flyout" => options.flyout = true,
             "--about" => options.about = true,
+            "--tab=mixer" => options.tab = 0,
+            "--tab=devices" => options.tab = 1,
             _ => return Err(format!("unknown argument `{arg}`")),
         }
     }
@@ -60,11 +64,13 @@ mod tests {
                 dark: Some(false),
                 mock: true,
                 flyout: false,
+                tab: 0,
                 about: false,
             }
         );
         assert_eq!(parse_all(&[]).unwrap(), Options::default());
         assert_eq!(parse_all(&["--dark"]).unwrap().dark, Some(true));
+        assert_eq!(parse_all(&["--tab=devices"]).unwrap().tab, 1);
     }
 
     #[test]

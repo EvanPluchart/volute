@@ -791,7 +791,7 @@ mod tests {
         let shown = &frames[1..];
         let rows = shown[0].rows.as_ref().expect("the first shown frame has the rows");
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, ["Discord", "firefox", "Spotify", "hollow_knight", ""]);
+        assert_eq!(names, ["Discord", "Firefox", "Spotify", "Hollow_knight", ""]);
         assert!(rows[4].system);
         assert!(shown[0].devices.as_ref().is_some_and(|d| d.len() == 3));
         assert!(shown[1..].iter().all(|f| f.rows.is_none() && f.devices.is_none()), "only changes");
@@ -813,12 +813,12 @@ mod tests {
         wait();
         assert_eq!(control.calls().sessions, 2, "one read for the new session");
         let rows = run.last_rows().unwrap();
-        assert!(rows.iter().any(|r| r.name == "vlc"), "the new app is listed");
+        assert!(rows.iter().any(|r| r.name == "Vlc"), "the new app is listed");
         let spotify = rows.iter().find(|r| r.name == "Spotify").unwrap();
         assert!(spotify.muted && (spotify.volume - curve::position_from_scalar(0.25)).abs() < 1e-4);
         control.set_session_state("vlc", SessionState::Expired);
         wait();
-        assert!(run.last_rows().unwrap().iter().all(|r| r.name != "vlc"), "ended: gone");
+        assert!(run.last_rows().unwrap().iter().all(|r| r.name != "Vlc"), "ended: gone");
         run.stop();
     }
 
@@ -873,12 +873,12 @@ mod tests {
         run.send(Command::Visible(true));
         wait();
         let rows = run.last_rows().unwrap();
-        let vlc = rows.iter().find(|r| r.name == "vlc").unwrap();
+        let vlc = rows.iter().find(|r| r.name == "Vlc").unwrap();
         assert!((vlc.volume - 0.4).abs() < 1e-3, "remembered 40 %, got {}", vlc.volume);
         // Changed in Windows' mixer while it plays: Volute does not fight it.
         control.change_session("vlc", 0.9, false);
         wait();
-        let vlc = run.last_rows().unwrap().into_iter().find(|r| r.name == "vlc").unwrap();
+        let vlc = run.last_rows().unwrap().into_iter().find(|r| r.name == "Vlc").unwrap();
         assert!((vlc.volume - curve::position_from_scalar(0.9)).abs() < 1e-3);
         run.stop();
     }

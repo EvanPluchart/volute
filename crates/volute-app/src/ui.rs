@@ -53,6 +53,7 @@ struct Ui {
     /// 0 follows the system, 1 dark, 2 light.
     scheme: i32,
     main_visible: bool,
+    main_shown_once: bool,
     main_occluded: bool,
     /// Wheel delta over the tray icon not yet worth a notch (precision touchpads).
     wheel: i32,
@@ -128,6 +129,7 @@ pub fn install(app: &AppWindow, commands: flume::Sender<Input>, scheme: i32, wit
             shown: Shown::default(),
             scheme,
             main_visible: false,
+            main_shown_once: false,
             main_occluded: false,
             wheel: 0,
             audio_visible: false,
@@ -288,15 +290,24 @@ fn update_visibility() {
     });
 }
 
+/// The main window's size the first time it opens, in logical pixels: Slint would otherwise
+/// open it at its minimum.
+const MAIN_SIZE: (f32, f32) = (460.0, 640.0);
+
 /// Shows the main window and brings it forward.
 pub fn show_main() {
     let app = with_ui(|ui| {
+        let first = !ui.main_shown_once;
+        ui.main_shown_once = true;
         ui.main_visible = true;
         ui.main_occluded = false;
-        ui.app.clone_strong()
+        (ui.app.clone_strong(), first)
     });
-    let Some(app) = app else { return };
+    let Some((app, first)) = app else { return };
     let _ = app.show();
+    if first {
+        app.window().set_size(slint::LogicalSize::new(MAIN_SIZE.0, MAIN_SIZE.1));
+    }
     app.window().with_winit_window(|w| {
         w.set_minimized(false);
         w.focus_window();

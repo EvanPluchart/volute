@@ -57,8 +57,8 @@ export component Fader inherits FocusScope {
         x: root.knob / 2;
         y: (root.height - self.height) / 2;
         width: root.span;
-        height: 6px;
-        border-radius: 3px;
+        height: 8px;
+        border-radius: 4px;
         background: root.track-color;
         clip: true;
 
@@ -68,9 +68,14 @@ export component Fader inherits FocusScope {
             background: root.muted ? root.muted-color : root.fill-color;
         }
 
+        // The level runs as a thinner line through the middle, so the value stays readable
+        // around it, even at full level.
         Rectangle {
-            x: 0;
-            width: parent.width * Math.min(root.level, 1);
+            x: 2px;
+            y: (parent.height - self.height) / 2;
+            width: (parent.width - 4px) * Math.min(root.level, 1);
+            height: 3px;
+            border-radius: 1.5px;
             background: root.level-color;
             visible: !root.muted && root.level > 0.004;
         }

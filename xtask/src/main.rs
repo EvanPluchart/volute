@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 
 const USAGE: &str = "usage: cargo xtask check
-       cargo xtask bench-overhead [--seconds=N] [--check]";
+       cargo xtask bench-overhead [--seconds=N] [--check] [--real]";
 const WARM_UP: Duration = Duration::from_secs(5);
 
 /// The performance budget from docs/ARCHITECTURE.md, per state: CPU of one core, private MB.
@@ -24,9 +24,14 @@ fn main() -> Result<()> {
         Some("bench-overhead") => {
             let mut seconds = 60;
             let mut check = false;
+            let mut real = false;
             for arg in args {
                 if arg == "--check" {
                     check = true;
+                    continue;
+                }
+                if arg == "--real" {
+                    real = true;
                     continue;
                 }
                 match arg.strip_prefix("--seconds=").map(str::parse) {
@@ -34,7 +39,7 @@ fn main() -> Result<()> {
                     _ => bail!("invalid argument `{arg}`\n{USAGE}"),
                 }
             }
-            bench_overhead(Duration::from_secs(seconds), check)
+            bench_overhead(Duration::from_secs(seconds), check, real)
         }
         _ => bail!("{USAGE}"),
     }
@@ -72,10 +77,11 @@ fn check() -> Result<()> {
     Ok(())
 }
 
-/// Builds Volute in release, then runs it on the mock twice: window open with meters running,
-/// then idle in the tray with nothing shown. Prints CPU of one core and peak private memory.
-/// With `check`, fails when a state is over budget.
-fn bench_overhead(duration: Duration, check: bool) -> Result<()> {
+/// Builds Volute in release, then runs it twice: window open with meters running, then idle in
+/// the tray with nothing shown. Prints CPU of one core and peak private memory. With `check`,
+/// fails when a state is over budget. On the mock, unless `real`: then on this machine's Core
+/// Audio, read only (no settings file, so no remembered volume is ever applied).
+fn bench_overhead(duration: Duration, check: bool, real: bool) -> Result<()> {
     let root = workspace_root();
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let status = Command::new(cargo)
@@ -90,12 +96,13 @@ fn bench_overhead(duration: Duration, check: bool) -> Result<()> {
         .join("target/release/volute")
         .with_extension(std::env::consts::EXE_EXTENSION);
 
-    // The mock and no settings file: a benchmark touches no real audio and neither reads nor
-    // changes the user's setup, and runs next to the user's own Volute.
+    // No settings file: a benchmark neither reads nor changes the user's setup, applies no
+    // remembered volume, and runs next to the user's own Volute. The mock by default.
+    let source: &[&str] = if real { &[] } else { &["--mock"] };
     let states = [
         (
             "open",
-            &["--mock", "--no-settings", "--open", "--no-tray"][..],
+            &["--no-settings", "--open", "--no-tray"][..],
             Budget {
                 cpu_percent: 4.0,
                 private_mb: 40.0,
@@ -103,7 +110,7 @@ fn bench_overhead(duration: Duration, check: bool) -> Result<()> {
         ),
         (
             "idle",
-            &["--mock", "--no-settings"][..],
+            &["--no-settings"][..],
             Budget {
                 cpu_percent: 0.1,
                 private_mb: 25.0,
@@ -112,9 +119,11 @@ fn bench_overhead(duration: Duration, check: bool) -> Result<()> {
     ];
     let mut over = Vec::new();
     println!();
-    println!("volute overhead on the mock, {} s per state", duration.as_secs());
+    let on = if real { "this machine's Core Audio, read only" } else { "the mock" };
+    println!("volute overhead on {on}, {} s per state", duration.as_secs());
     for (name, args, budget) in states {
         let mut child = Command::new(&exe)
+            .args(source)
             .args(args)
             .spawn()
             .with_context(|| format!("starting {}", exe.display()))?;

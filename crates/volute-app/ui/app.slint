@@ -164,9 +164,13 @@ export component AppWindow inherits Window {
 
         if root.tab == 0: VerticalLayout {
             MasterBand { }
-            AppList {
-                limit: 100000px;
+            // The list fills the window and scrolls: no height of its own to cap the window.
+            Rectangle {
                 vertical-stretch: 1;
+                AppList {
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
             Footer {
                 show-open: false;
