@@ -1,7 +1,7 @@
 //! Command-line flags. Test flags reach a state directly, for screenshots, benchmarks and tests.
 
 pub const USAGE: &str =
-    "usage: volute [--open] [--no-settings] [--no-tray] [--dark|--light] [--mock]";
+    "usage: volute [--open] [--no-settings] [--no-tray] [--dark|--light] [--mock] [--about]";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options {
@@ -16,6 +16,8 @@ pub struct Options {
     pub dark: Option<bool>,
     /// Runs on the scripted `MockAudio` instead of Core Audio (screenshots, tests).
     pub mock: bool,
+    /// Opens the About window at start (screenshots).
+    pub about: bool,
 }
 
 pub fn parse(args: impl Iterator<Item = String>) -> Result<Options, String> {
@@ -28,6 +30,7 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--dark" => options.dark = Some(true),
             "--light" => options.dark = Some(false),
             "--mock" => options.mock = true,
+            "--about" => options.about = true,
             _ => return Err(format!("unknown argument `{arg}`")),
         }
     }
@@ -53,6 +56,7 @@ mod tests {
                 no_tray: true,
                 dark: Some(false),
                 mock: true,
+                about: false,
             }
         );
         assert_eq!(parse_all(&[]).unwrap(), Options::default());

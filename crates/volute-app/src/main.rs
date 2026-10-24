@@ -69,6 +69,11 @@ fn main() -> anyhow::Result<()> {
     };
 
     let app = AppWindow::new().context("creating the main window")?;
+    // The event loop exists now: keep its hidden message window from closing on a foreign
+    // WM_CLOSE, or the tray and a second launch could no longer reach this thread.
+    if volute_shell::guard_ui_thread() == 0 && cfg!(windows) {
+        eprintln!("volute: no event target window to guard; a close request may cut off the tray");
+    }
     // "System" assigns nothing: the palette then follows the system theme live.
     if theme != Theme::System {
         app.invoke_set_scheme(if theme == Theme::Dark { 1 } else { 2 });
@@ -150,6 +155,9 @@ fn main() -> anyhow::Result<()> {
     let in_tray = tray.as_ref().is_some_and(Tray::is_shown);
     if options.open || !in_tray {
         show_main();
+    }
+    if options.about {
+        app.invoke_show_about();
     }
 
     let make: MakeBackend = if options.mock {
