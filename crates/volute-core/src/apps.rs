@@ -49,7 +49,8 @@ impl App {
     }
 }
 
-fn key_of(session: &Session) -> AppKey {
+/// The app a session belongs to.
+pub fn key_of(session: &Session) -> AppKey {
     if session.system_sounds {
         AppKey::SystemSounds
     } else if let Some(exe) = &session.exe {
