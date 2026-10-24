@@ -1,0 +1,218 @@
+// Volute's M0 window: one row per app with its name, a slider, a mute button and a live meter.
+// Plain Slint controls styled from theme.slint; Volute's own controls come in the design track.
+
+import { AboutSlint, Button, ListView, Palette, Slider } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+
+export struct AppRow {
+    key: string,
+    name: string,
+    system: bool,
+    // Slider position, 0 to 1.
+    volume: float,
+    muted: bool,
+    playing: bool,
+}
+
+// The tray menu's labels, translated here like every other string.
+export global TrayText {
+    public pure function open() -> string {
+        return @tr("Open Volute");
+    }
+    public pure function quit() -> string {
+        return @tr("Quit");
+    }
+}
+
+export component AboutWindow inherits Window {
+    in property <string> version;
+    title: @tr("About Volute");
+    background: Theme.background;
+    default-font-size: Theme.font-body;
+
+    VerticalLayout {
+        padding: Theme.space-6;
+        spacing: Theme.space-3;
+        Text {
+            text: "Volute";
+            font-size: Theme.font-title;
+            font-weight: 600;
+            color: Theme.text;
+        }
+        Text {
+            text: @tr("Version {}", root.version);
+            color: Theme.text-muted;
+        }
+        Text {
+            text: @tr("A volume mixer for Windows.");
+            color: Theme.text;
+            wrap: word-wrap;
+        }
+        AboutSlint { }
+    }
+}
+
+component Meter inherits Rectangle {
+    in property <float> level;
+    in property <bool> muted;
+    height: 4px;
+    border-radius: 2px;
+    background: Theme.meter-track;
+
+    Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.level, 0, 1);
+        height: parent.height;
+        border-radius: parent.border-radius;
+        background: root.muted ? Theme.text-muted
+            : root.level >= 0.98 ? Theme.meter-clip
+            : root.level >= 0.8 ? Theme.meter-loud
+            : Theme.meter-calm;
+    }
+}
+
+component AppRowView inherits Rectangle {
+    in-out property <AppRow> app;
+    in property <float> level;
+    callback volume-changed(float);
+    callback volume-released(float);
+    callback mute-toggled(bool);
+
+    height: 84px;
+    border-radius: Theme.radius-card;
+    background: Theme.raised;
+    border-width: 1px;
+    border-color: Theme.border;
+
+    VerticalLayout {
+        padding-left: Theme.space-4;
+        padding-right: Theme.space-3;
+        padding-top: Theme.space-2;
+        padding-bottom: Theme.space-3;
+        spacing: Theme.space-1;
+
+        HorizontalLayout {
+            spacing: Theme.space-3;
+            Text {
+                text: root.app.system ? @tr("System sounds") : root.app.name;
+                color: root.app.playing ? Theme.text : Theme.text-muted;
+                font-weight: 600;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: @tr("{}%", Math.round(root.app.volume * 100));
+                color: Theme.text-muted;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                min-width: 44px;
+            }
+            Button {
+                text: root.app.muted ? @tr("Unmute") : @tr("Mute");
+                width: 104px;
+                clicked => {
+                    root.mute-toggled(!root.app.muted);
+                }
+            }
+        }
+
+        Slider {
+            minimum: 0;
+            maximum: 1;
+            value <=> root.app.volume;
+            changed(value) => {
+                root.volume-changed(value);
+            }
+            released(value) => {
+                root.volume-released(value);
+            }
+        }
+
+        Meter {
+            level: root.level;
+            muted: root.app.muted;
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    in property <[AppRow]> rows;
+    in property <[float]> levels;
+    // An error to show, empty when all is well.
+    in property <string> error;
+    // The first rows have arrived (until then, "no app" would be a lie).
+    in property <bool> loaded;
+    callback volume-changed(string, float);
+    callback volume-released(string, float);
+    callback mute-toggled(string, bool);
+    callback show-about();
+
+    // 0 follows the system, 1 dark, 2 light.
+    public function set-scheme(scheme: int) {
+        Palette.color-scheme = scheme == 1 ? ColorScheme.dark : scheme == 2 ? ColorScheme.light : ColorScheme.unknown;
+    }
+
+    title: "Volute";
+    preferred-width: 440px;
+    preferred-height: 520px;
+    min-width: 340px;
+    min-height: 260px;
+    background: Theme.background;
+    default-font-size: Theme.font-body;
+
+    VerticalLayout {
+        padding: Theme.space-4;
+        spacing: Theme.space-3;
+
+        HorizontalLayout {
+            spacing: Theme.space-3;
+            Text {
+                text: @tr("Volume mixer");
+                font-size: Theme.font-title;
+                font-weight: 600;
+                color: Theme.text;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Button {
+                text: @tr("About");
+                clicked => {
+                    root.show-about();
+                }
+            }
+        }
+
+        if root.error != "": Text {
+            text: @tr("Audio is unavailable: {}", root.error);
+            color: Theme.danger;
+            wrap: word-wrap;
+        }
+
+        if root.loaded && root.rows.length == 0 && root.error == "": Text {
+            text: @tr("No app is playing sound.");
+            color: Theme.text-muted;
+            horizontal-alignment: center;
+        }
+
+        ListView {
+            vertical-stretch: 1;
+            for row[i] in root.rows: VerticalLayout {
+                padding-bottom: Theme.space-2;
+                AppRowView {
+                    app <=> row;
+                    level: root.levels[i];
+                    volume-changed(value) => {
+                        root.volume-changed(row.key, value);
+                    }
+                    volume-released(value) => {
+                        root.volume-released(row.key, value);
+                    }
+                    mute-toggled(muted) => {
+                        root.mute-toggled(row.key, muted);
+                    }
+                }
+            }
+        }
+    }
+}

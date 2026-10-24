@@ -1,0 +1,44 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: fr\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "About Volute"
+msgstr "À propos de Volute"
+
+msgid "Version {}"
+msgstr "Version {}"
+
+msgid "A volume mixer for Windows."
+msgstr "Un mélangeur de volume pour Windows."
+
+msgid "System sounds"
+msgstr "Sons système"
+
+msgid "{}%"
+msgstr "{} %"
+
+msgid "Mute"
+msgstr "Couper"
+
+msgid "Unmute"
+msgstr "Rétablir"
+
+msgid "Volume mixer"
+msgstr "Mélangeur de volume"
+
+msgid "About"
+msgstr "À propos"
+
+msgid "Audio is unavailable: {}"
+msgstr "Le son est indisponible : {}"
+
+msgid "No app is playing sound."
+msgstr "Aucune app ne joue de son."
+
+msgid "Open Volute"
+msgstr "Ouvrir Volute"
+
+msgid "Quit"
+msgstr "Quitter"

@@ -1,0 +1,38 @@
+// First design tokens, from docs/BRAND.md. Provisional: the design track sets the real values.
+// Views use these instead of literal colours and sizes. The tokens follow Palette.color-scheme,
+// so --dark and --light switch them with the native widgets.
+
+import { Palette } from "std-widgets.slint";
+
+export global Theme {
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+
+    // Surfaces and text (AA for every text on its surface, in both themes)
+    out property <color> background: dark ? #141215 : #F7F5F2;
+    out property <color> raised: dark ? #1E1B1F : #FFFFFF;
+    out property <color> border: dark ? #2E2A30 : #E4DFD9;
+    out property <color> text: dark ? #EEEAE5 : #1B1815;
+    out property <color> text-muted: dark ? #A39C95 : #635C55;
+
+    // One warm accent for what is live; red only for what cuts sound
+    out property <color> accent: dark ? #F2A65A : #A8561B;
+    out property <color> danger: dark ? #FF6B6B : #C2302E;
+
+    // Meters: track, calm, loud, clipping
+    out property <color> meter-track: dark ? #2A262B : #ECE7E1;
+    out property <color> meter-calm: accent;
+    out property <color> meter-loud: dark ? #FFD27A : #D08A1E;
+    out property <color> meter-clip: danger;
+
+    // Radii, spacing, type
+    out property <length> radius-control: 8px;
+    out property <length> radius-card: 14px;
+    out property <length> space-1: 4px;
+    out property <length> space-2: 8px;
+    out property <length> space-3: 12px;
+    out property <length> space-4: 16px;
+    out property <length> space-6: 24px;
+    out property <length> font-caption: 12px;
+    out property <length> font-body: 14px;
+    out property <length> font-title: 18px;
+}
