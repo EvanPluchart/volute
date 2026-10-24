@@ -15,6 +15,9 @@ export global TrayText {
     public pure function quit() -> string {
         return @tr("Quit");
     }
+    public pure function mute() -> string {
+        return @tr("Mute all");
+    }
     public pure function tooltip(device: string, volume: int, muted: bool) -> string {
         return muted ? @tr("{}: muted", device) : @tr("{}: {}%", device, volume);
     }

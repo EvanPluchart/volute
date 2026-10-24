@@ -109,6 +109,20 @@ fn sets_volume_and_mute_of_its_own_session_only() {
         assert!(!now.muted, "unmute read back");
         wait_for("the second change", &ours(own.id.clone(), 0.81));
 
+        // From a command to the volume applied: under 16 ms (docs/ARCHITECTURE.md). A fader
+        // drag ends in one such call; the channel before it only wakes the audio thread.
+        let mut times: Vec<Duration> = (0..20)
+            .map(|i| {
+                let started = Instant::now();
+                audio.set_volume(&target, 0.5 + i as f32 / 100.0).expect("set_volume");
+                started.elapsed()
+            })
+            .collect();
+        times.sort();
+        eprintln!("set_volume: median {:?}, slowest {:?}", times[10], times[19]);
+        assert!(times[10] < Duration::from_millis(16), "median {:?}", times[10]);
+        audio.set_volume(&target, 0.81).expect("set_volume");
+
         // Every other session still present kept its volume and mute.
         let after = read(audio);
         for before in &others {

@@ -42,6 +42,8 @@ export global Mixer {
     in property <float> mic-level;
     // An error to show, empty when all is well.
     in property <string> error;
+    // A command that failed, shown for a moment; empty when there is none.
+    in property <string> notice;
     // The first rows have arrived (until then, "no app" would be a lie).
     in property <bool> loaded;
 
@@ -308,6 +310,27 @@ export component AppList inherits Rectangle {
     if Mixer.error == "" && Mixer.loaded && Mixer.rows.length == 0: Text {
         text: @tr("No app is playing sound.");
         color: Theme.text-muted;
+    }
+
+    if Mixer.notice != "": Rectangle {
+        x: Theme.space-3;
+        y: parent.height - self.height - Theme.space-2;
+        width: parent.width - 2 * Theme.space-3;
+        height: notice-text.preferred-height + 2 * Theme.space-2;
+        z: 1;
+        border-radius: Theme.radius-control;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.danger;
+        notice-text := Text {
+            x: Theme.space-3;
+            width: parent.width - 2 * Theme.space-3;
+            text: Mixer.notice;
+            color: Theme.text;
+            font-size: Theme.font-caption;
+            wrap: word-wrap;
+            vertical-alignment: center;
+        }
     }
 
     Flickable {

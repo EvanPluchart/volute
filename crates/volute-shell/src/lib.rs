@@ -101,6 +101,8 @@ pub enum TrayEvent {
     Open,
     /// "Quit" in the menu, or Windows is signing out.
     Quit,
+    /// "Mute all" in the menu: mute or unmute the master output.
+    ToggleMute,
     /// The mouse wheel over the icon: 120 per notch, positive away from the user (decision 0007).
     Wheel { delta: i32 },
 }
@@ -109,6 +111,8 @@ pub enum TrayEvent {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrayMenu {
     pub open: String,
+    /// "Mute all", checked while the master output is muted.
+    pub mute: String,
     pub quit: String,
 }
 

@@ -57,6 +57,8 @@ struct Ui {
     main_occluded: bool,
     /// Wheel delta over the tray icon not yet worth a notch (precision touchpads).
     wheel: i32,
+    /// Clears the notice of a failed command.
+    notice_timer: slint::Timer,
     /// What the audio thread was last told.
     audio_visible: bool,
 }
@@ -108,6 +110,7 @@ pub fn install(app: &AppWindow, commands: flume::Sender<Input>, scheme: i32, wit
             let text = app.global::<TrayText>();
             let menu = volute_shell::TrayMenu {
                 open: text.invoke_open().into(),
+                mute: text.invoke_mute().into(),
                 quit: text.invoke_quit().into(),
             };
             Tray::new("Volute", menu, |event| {
@@ -132,6 +135,7 @@ pub fn install(app: &AppWindow, commands: flume::Sender<Input>, scheme: i32, wit
             main_shown_once: false,
             main_occluded: false,
             wheel: 0,
+            notice_timer: slint::Timer::default(),
             audio_visible: false,
         });
     });
@@ -257,6 +261,9 @@ pub fn apply(frame: Frame) {
             ui.shown.error = error;
             changed = true;
         }
+        if let Some(notice) = &frame.notice {
+            show_notice(ui, notice);
+        }
         if changed {
             for m in globals(ui) {
                 push_shown(&m, &ui.shown);
@@ -277,6 +284,22 @@ pub fn apply(frame: Frame) {
         // The flyout's height follows its rows: keep it in place once it has been laid out.
         slint::Timer::single_shot(Duration::ZERO, place_flyout);
     }
+}
+
+/// How long a failed command's notice stays.
+const NOTICE_FOR: Duration = Duration::from_secs(5);
+
+fn show_notice(ui: &mut Ui, notice: &str) {
+    for m in globals(ui) {
+        m.set_notice(notice.into());
+    }
+    ui.notice_timer.start(slint::TimerMode::SingleShot, NOTICE_FOR, || {
+        with_ui(|ui| {
+            for m in globals(ui) {
+                m.set_notice("".into());
+            }
+        });
+    });
 }
 
 /// Tells the audio thread whether any mixer is on screen, when that changes.
@@ -344,6 +367,12 @@ fn on_tray_event(event: TrayEvent) {
     match event {
         TrayEvent::Clicked { x, y } => toggle_flyout(x, y),
         TrayEvent::Open => show_main(),
+        TrayEvent::ToggleMute => {
+            let master = with_ui(|ui| ui.shown.master.clone()).flatten();
+            if let Some(master) = master {
+                send(Command::SetDeviceMute { id: master.id.to_string(), muted: !master.muted });
+            }
+        }
         TrayEvent::Wheel { delta } => {
             let steps = with_ui(|ui| {
                 let (steps, rest) = notches(ui.wheel, delta);

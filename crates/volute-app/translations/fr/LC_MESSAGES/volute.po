@@ -69,3 +69,6 @@ msgstr "{} : coupé"
 
 msgid "{}: {}%"
 msgstr "{} : {} %"
+
+msgid "Mute all"
+msgstr "Tout couper"

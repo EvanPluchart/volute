@@ -21,7 +21,7 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu,
     DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, HICON,
-    IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTCOLOR, LoadIconW, LoadImageW, MF_SEPARATOR, MF_STRING,
+    IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTCOLOR, LoadIconW, LoadImageW, MF_CHECKED, MF_SEPARATOR, MF_STRING,
     MSG, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SM_CXSMICON,
     SetForegroundWindow, SetWindowLongPtrW, TPM_BOTTOMALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
     TrackPopupMenu, TranslateMessage, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
@@ -43,6 +43,7 @@ const ICON_RESOURCE: u16 = 1;
 const MUTED_RESOURCE: u16 = 2;
 const MENU_OPEN: usize = 1;
 const MENU_QUIT: usize = 2;
+const MENU_MUTE: usize = 3;
 
 type Callback = Arc<dyn Fn(TrayEvent) + Send + Sync>;
 
@@ -427,10 +428,10 @@ fn wheel(hwnd: HWND, lparam: LPARAM, state: &State) {
 }
 
 fn show_menu(hwnd: HWND, state: &State, x: i32, y: i32) {
-    let Ok(labels) = state.shared.lock().map(|s| s.menu.clone()) else {
+    let Ok((labels, muted)) = state.shared.lock().map(|s| (s.menu.clone(), s.muted)) else {
         return;
     };
-    let (open, quit) = (wide(&labels.open), wide(&labels.quit));
+    let (open, mute, quit) = (wide(&labels.open), wide(&labels.mute), wide(&labels.quit));
     // SAFETY: a menu owned and destroyed here. Our window must be in the foreground for the
     // menu to close when the user clicks elsewhere, and WM_NULL afterwards lets it close
     // cleanly (documented TrackPopupMenu behaviour).
@@ -440,6 +441,8 @@ fn show_menu(hwnd: HWND, state: &State, x: i32, y: i32) {
             return;
         }
         AppendMenuW(menu, MF_STRING, MENU_OPEN, open.as_ptr());
+        // Mute all: the master output, checked while it is muted.
+        AppendMenuW(menu, MF_STRING | if muted { MF_CHECKED } else { 0 }, MENU_MUTE, mute.as_ptr());
         AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
         AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
         SetForegroundWindow(hwnd);
@@ -459,6 +462,7 @@ fn show_menu(hwnd: HWND, state: &State, x: i32, y: i32) {
     match command as usize {
         MENU_OPEN => (state.callback)(TrayEvent::Open),
         MENU_QUIT => (state.callback)(TrayEvent::Quit),
+        MENU_MUTE => (state.callback)(TrayEvent::ToggleMute),
         _ => {}
     }
 }
@@ -497,6 +501,7 @@ mod tests {
             "Volute test",
             TrayMenu {
                 open: "Open".into(),
+                mute: "Mute all".into(),
                 quit: "Quit".into(),
             },
             Arc::new(|_| {}),

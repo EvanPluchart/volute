@@ -108,8 +108,11 @@ pub struct Frame {
     pub master_level: f32,
     pub mic_level: f32,
     pub icons: Vec<IconData>,
-    /// The error to show: empty clears it.
+    /// The error to show: empty clears it. The sound system itself failed (no Core Audio, no
+    /// devices): it stays until it is solved.
     pub error: Option<String>,
+    /// A command that failed (a default device Windows refused, say): shown for a moment.
+    pub notice: Option<String>,
     pub tray: Option<TrayData>,
 }
 
@@ -219,6 +222,8 @@ struct Mixer {
     tray_dirty: bool,
     error: String,
     error_dirty: bool,
+    /// A failed command, for the next frame; dropped when the mixer hides.
+    notice: Option<String>,
     next_meter: Instant,
     next_expiry: Option<Duration>,
 }
@@ -272,6 +277,7 @@ impl Mixer {
             tray_dirty: false,
             error_dirty: !error.is_empty(),
             error,
+            notice: None,
             next_meter: now,
             next_expiry: None,
         };
@@ -338,12 +344,13 @@ impl Mixer {
                 }
                 if !visible {
                     self.save_memory();
+                    self.notice = None;
                 }
                 self.visible = visible;
             }
             Command::SetMute { key, muted } => {
                 let error = self.with_sessions(&key, |audio, target| audio.set_mute(target, muted));
-                self.report(error);
+                self.notice(error);
                 if let Some(app) = self.apps.iter().find(|a| a.key.to_text() == key).cloned() {
                     let position = curve::position_from_scalar(app.volume);
                     self.remember(&app.key, position, muted);
@@ -352,11 +359,11 @@ impl Mixer {
             Command::SetVolume { key, position } => self.set_volume(&key, position),
             Command::SetDeviceVolume { id, volume } => {
                 let result = self.audio.as_deref_mut().map(|a| a.set_volume(&Target::Device(DeviceId(id)), volume));
-                self.report(result.and_then(|r| r.err()).map(|e| e.to_string()));
+                self.notice(result.and_then(|r| r.err()).map(|e| e.to_string()));
             }
             Command::SetDeviceMute { id, muted } => {
                 let result = self.audio.as_deref_mut().map(|a| a.set_mute(&Target::Device(DeviceId(id)), muted));
-                self.report(result.and_then(|r| r.err()).map(|e| e.to_string()));
+                self.notice(result.and_then(|r| r.err()).map(|e| e.to_string()));
             }
             Command::SetDefault { id } => {
                 let device = DeviceId(id);
@@ -369,13 +376,13 @@ impl Mixer {
                         }
                     }
                 }
-                self.report(error);
+                self.notice(error);
             }
             Command::StepMaster(steps) => {
                 if let Some(master) = self.master_device().cloned() {
                     let volume = (master.volume + steps as f32 * MASTER_STEP).clamp(0.0, 1.0);
                     let result = self.audio.as_deref_mut().map(|a| a.set_volume(&Target::Device(master.id), volume));
-                    self.report(result.and_then(|r| r.err()).map(|e| e.to_string()));
+                    self.notice(result.and_then(|r| r.err()).map(|e| e.to_string()));
                 }
             }
             Command::Quit => {}
@@ -425,7 +432,7 @@ impl Mixer {
     fn set_volume(&mut self, key: &str, position: f32) {
         let scalar = curve::scalar_from_position(position);
         let error = self.with_sessions(key, |audio, target| audio.set_volume(target, scalar));
-        self.report(error);
+        self.notice(error);
         if let Some(app) = self.apps.iter().find(|a| a.key.to_text() == key).cloned() {
             self.remember(&app.key, position, app.muted);
         }
@@ -463,6 +470,13 @@ impl Mixer {
             }
         }
         error
+    }
+
+    /// A command failed: say so in the next frame, without touching the rows.
+    fn notice(&mut self, error: Option<String>) {
+        if let Some(error) = error {
+            self.notice = Some(error);
+        }
     }
 
     fn report(&mut self, error: Option<String>) {
@@ -682,6 +696,7 @@ impl Mixer {
             mic_level: self.mic_level,
             icons: std::mem::take(&mut self.pending_icons),
             error: self.error_dirty.then(|| self.error.clone()),
+            notice: self.notice.take(),
             tray: self.tray_dirty.then(|| self.tray.clone()).flatten(),
         };
         self.in_flight.store(true, Ordering::Release);
@@ -881,6 +896,20 @@ mod tests {
         let vlc = run.last_rows().unwrap().into_iter().find(|r| r.name == "Vlc").unwrap();
         assert!((vlc.volume - curve::position_from_scalar(0.9)).abs() < 1e-3);
         run.stop();
+    }
+
+    #[test]
+    fn a_failed_command_is_a_notice_not_an_error() {
+        let run = start();
+        run.send(Command::Visible(true));
+        wait();
+        run.send(Command::SetDefault { id: "no such device".into() });
+        wait();
+        let frames = run.stop();
+        let notice = frames.iter().find_map(|f| f.notice.clone()).expect("a notice");
+        assert!(notice.contains("not found"), "{notice}");
+        assert!(frames.iter().all(|f| f.error.as_deref().is_none_or(str::is_empty)), "no error");
+        assert!(frames.iter().filter(|f| f.notice.is_some()).count() == 1, "said once");
     }
 
     #[test]
