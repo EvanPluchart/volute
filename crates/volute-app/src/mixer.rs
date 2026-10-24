@@ -41,8 +41,6 @@ pub enum Command {
     /// Makes this output the default for every role.
     SetDefault { id: String },
     /// Moves the master output by `steps` notches (the tray's wheel).
-    // Sent by the tray's wheel, wired with the tray in the next step of M1.
-    #[allow(dead_code)]
     StepMaster(i32),
     /// Stop now. Not waiting for every sender to drop, which a callback holding one would
     /// prevent (decision 0004).

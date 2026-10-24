@@ -54,6 +54,8 @@ struct Ui {
     scheme: i32,
     main_visible: bool,
     main_occluded: bool,
+    /// Wheel delta over the tray icon not yet worth a notch (precision touchpads).
+    wheel: i32,
     /// What the audio thread was last told.
     audio_visible: bool,
 }
@@ -127,6 +129,7 @@ pub fn install(app: &AppWindow, commands: flume::Sender<Input>, scheme: i32, wit
             scheme,
             main_visible: false,
             main_occluded: false,
+            wheel: 0,
             audio_visible: false,
         });
     });
@@ -328,6 +331,16 @@ fn on_tray_event(event: TrayEvent) {
     match event {
         TrayEvent::Clicked { x, y } => toggle_flyout(x, y),
         TrayEvent::Open => show_main(),
+        TrayEvent::Wheel { delta } => {
+            let steps = with_ui(|ui| {
+                let (steps, rest) = notches(ui.wheel, delta);
+                ui.wheel = rest;
+                steps
+            });
+            if let Some(steps) = steps.filter(|&s| s != 0) {
+                send(Command::StepMaster(steps));
+            }
+        }
         TrayEvent::Quit => {
             let _ = slint::quit_event_loop();
         }
@@ -407,4 +420,26 @@ pub fn close_flyout() {
         let _ = flyout.hide();
     }
     update_visibility();
+}
+
+/// Whole wheel notches (120 each) in `pending + delta`, and what is left over for the next turn.
+fn notches(pending: i32, delta: i32) -> (i32, i32) {
+    let total = pending + delta;
+    (total / 120, total % 120)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::notches;
+
+    #[test]
+    fn wheel_deltas_add_up_to_notches() {
+        assert_eq!(notches(0, 120), (1, 0));
+        assert_eq!(notches(0, -240), (-2, 0));
+        // A touchpad: small deltas add up, the rest waits.
+        assert_eq!(notches(0, 40), (0, 40));
+        assert_eq!(notches(40, 40), (0, 80));
+        assert_eq!(notches(80, 50), (1, 10));
+        assert_eq!(notches(10, -30), (0, -20));
+    }
 }

@@ -7,4 +7,4 @@ authors.workspace = true
 description = "Volute's desktop integration: tray, single instance, settings file (decision 0004)"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_Security"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_UI_Input", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_Security"] }

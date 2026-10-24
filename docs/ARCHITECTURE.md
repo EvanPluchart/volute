@@ -51,7 +51,7 @@ pub trait Audio: Send {
   * A session is keyed by its session instance identifier.
   * An app is keyed by its executable path, not its PID: a browser has many processes, and a game restarts with a new PID.
   * Remembered volumes are per app.
-* **The default output device** is set through `IPolicyConfig`, an undocumented interface every mixer uses. **Per-app output devices** use `IAudioPolicyConfigFactory`, also undocumented, behind a feature that degrades gracefully. Decision 0002 records both.
+* **The default output device** is set through `IPolicyConfig`, an undocumented interface every mixer uses, for all three roles (console, multimedia, communications) at once, as EarTrumpet does: one click moves every sound. **Per-app output devices** use `IAudioPolicyConfigFactory`, also undocumented, behind a feature that degrades gracefully. Decision 0002 records both.
 * **A mock backend** (`MockAudio`) implements the trait for tests and screenshots: scripted devices, sessions and peaks. Tests never change the volume of a real app.
 
 ### volute-core: the model

@@ -101,6 +101,8 @@ pub enum TrayEvent {
     Open,
     /// "Quit" in the menu, or Windows is signing out.
     Quit,
+    /// The mouse wheel over the icon: 120 per notch, positive away from the user (decision 0007).
+    Wheel { delta: i32 },
 }
 
 /// Menu labels, given by the app so they follow its language.

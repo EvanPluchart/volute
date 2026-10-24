@@ -2,15 +2,21 @@
 //! `NOTIFYICON_VERSION_4`, driven by a hidden window on a thread of its own. The thread sleeps
 //! in `GetMessageW`, so the icon costs nothing between events.
 
+use std::cell::Cell;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::Win32::UI::Input::{
+    GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER, RID_INPUT,
+    RIDEV_INPUTSINK, RIDEV_REMOVE, RIM_TYPEMOUSE, RegisterRawInputDevices,
+};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::HiDpi::{GetDpiForSystem, GetSystemMetricsForDpi};
 use windows_sys::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION,
-    NIN_SELECT, NOTIFYICON_VERSION_4, NOTIFYICONDATAW, Shell_NotifyIconW,
+    NIN_SELECT, NOTIFYICON_VERSION_4, NOTIFYICONDATAW, NOTIFYICONIDENTIFIER,
+    Shell_NotifyIconGetRect, Shell_NotifyIconW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu,
@@ -19,7 +25,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     MSG, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SM_CXSMICON,
     SetForegroundWindow, SetWindowLongPtrW, TPM_BOTTOMALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
     TrackPopupMenu, TranslateMessage, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
-    WM_ENDSESSION, WM_LBUTTONDBLCLK, WM_NULL, WNDCLASSW, WS_OVERLAPPED,
+    WM_ENDSESSION, WM_INPUT, WM_LBUTTONDBLCLK, WM_MOUSEMOVE, WM_NULL, WNDCLASSW, WS_OVERLAPPED,
+    GetCursorPos, RI_MOUSE_WHEEL,
 };
 
 use crate::{TrayEvent, TrayMenu};
@@ -57,6 +64,10 @@ struct State {
     /// The muted icon, resource 2 (the application icon when there is none).
     muted_icon: HICON,
     taskbar_created: u32,
+    /// Raw mouse input is registered: the pointer is over the icon (decision 0007).
+    listening: Cell<bool>,
+    /// Where the icon was, last time the pointer moved over it.
+    rect: Cell<RECT>,
 }
 
 pub(crate) struct Tray {
@@ -234,6 +245,8 @@ fn run(shared: Arc<Mutex<Shared>>, callback: Callback, ready: std::sync::mpsc::S
         callback,
         icon: load_icon(SM_CXSMICON, ICON_RESOURCE),
         muted_icon: load_icon(SM_CXSMICON, MUTED_RESOURCE),
+        listening: Cell::new(false),
+        rect: Cell::new(RECT::default()),
         // SAFETY: a NUL-terminated name.
         taskbar_created: unsafe { RegisterWindowMessageW(taskbar.as_ptr()) },
     });
@@ -278,6 +291,7 @@ unsafe extern "system" fn window_proc(
             let y = ((wparam >> 16) & 0xffff) as u16 as i16 as i32;
             match event {
                 NIN_SELECT | 0x401 /* NIN_KEYSELECT */ => (state.callback)(TrayEvent::Clicked { x, y }),
+                WM_MOUSEMOVE => hovered(hwnd, state),
                 WM_LBUTTONDBLCLK => (state.callback)(TrayEvent::Open),
                 WM_CONTEXTMENU => show_menu(hwnd, state, x, y),
                 _ => {}
@@ -298,7 +312,13 @@ unsafe extern "system" fn window_proc(
             (state.callback)(TrayEvent::Quit);
             0
         }
+        WM_INPUT => {
+            wheel(hwnd, lparam, state);
+            // SAFETY: default handling, which also lets the system free the input.
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
         WM_SHUTDOWN => {
+            listen(hwnd, state, false);
             if let Ok(mut shared) = state.shared.lock() {
                 shared.shown = false;
             }
@@ -322,6 +342,84 @@ unsafe extern "system" fn window_proc(
         }
         // SAFETY: default handling.
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+/// The pointer moved over the icon: listen to the wheel while it stays there (decision 0007).
+fn hovered(hwnd: HWND, state: &State) {
+    let id = NOTIFYICONIDENTIFIER {
+        cbSize: std::mem::size_of::<NOTIFYICONIDENTIFIER>() as u32,
+        hWnd: hwnd,
+        uID: ICON_ID,
+        ..NOTIFYICONIDENTIFIER::default()
+    };
+    let mut rect = RECT::default();
+    // SAFETY: a sized identifier of our own icon, and a rectangle to fill.
+    if unsafe { Shell_NotifyIconGetRect(&id, &mut rect) } == 0 {
+        state.rect.set(rect);
+        if pointer_in(rect) {
+            listen(hwnd, state, true);
+        }
+    }
+}
+
+fn pointer_in(rect: RECT) -> bool {
+    let mut p = POINT::default();
+    // SAFETY: a point to fill.
+    let ok = unsafe { GetCursorPos(&mut p) } != 0;
+    ok && p.x >= rect.left && p.x < rect.right && p.y >= rect.top && p.y < rect.bottom
+}
+
+/// Registers this window for raw mouse input, or removes the registration.
+fn listen(hwnd: HWND, state: &State, on: bool) {
+    if state.listening.get() == on {
+        return;
+    }
+    let device = RAWINPUTDEVICE {
+        // The generic desktop page, mouse usage.
+        usUsagePage: 0x01,
+        usUsage: 0x02,
+        dwFlags: if on { RIDEV_INPUTSINK } else { RIDEV_REMOVE },
+        hwndTarget: if on { hwnd } else { std::ptr::null_mut() },
+    };
+    // SAFETY: one sized device description.
+    let size = std::mem::size_of::<RAWINPUTDEVICE>() as u32;
+    if unsafe { RegisterRawInputDevices(&device, 1, size) } != 0 {
+        state.listening.set(on);
+    }
+}
+
+/// Raw mouse input while the pointer is over the icon: only the wheel is read, and only while
+/// the pointer is still inside; the first input outside stops the listening (decision 0007).
+fn wheel(hwnd: HWND, lparam: LPARAM, state: &State) {
+    if !pointer_in(state.rect.get()) {
+        listen(hwnd, state, false);
+        return;
+    }
+    let mut raw = RAWINPUT::default();
+    let mut size = std::mem::size_of::<RAWINPUT>() as u32;
+    // SAFETY: the input handle of this WM_INPUT, read into a buffer of the size given.
+    let read = unsafe {
+        GetRawInputData(
+            lparam as HRAWINPUT,
+            RID_INPUT,
+            (&raw mut raw).cast(),
+            &mut size,
+            std::mem::size_of::<RAWINPUTHEADER>() as u32,
+        )
+    };
+    if read == u32::MAX || raw.header.dwType != RIM_TYPEMOUSE {
+        return;
+    }
+    // SAFETY: a mouse input, so the union's mouse member is the one written.
+    let (flags, data) = unsafe {
+        let buttons = raw.data.mouse.Anonymous.Anonymous;
+        (buttons.usButtonFlags, buttons.usButtonData)
+    };
+    if u32::from(flags) & RI_MOUSE_WHEEL != 0 {
+        (state.callback)(TrayEvent::Wheel {
+            delta: i32::from(data as i16),
+        });
     }
 }
 
