@@ -1,35 +1,45 @@
-//! Where the settings file lives, and reading and writing it (decision 0004). The format is
-//! `volute_core::settings`; this module only moves text.
+//! Where Volute's files live, and reading and writing them (decision 0004): `settings.ini`
+//! (format in `volute_core::settings`) and `volumes.ini` (`volute_core::memory`). This module
+//! only moves text.
 
 use std::path::PathBuf;
 
-/// `%APPDATA%\Volute\settings.ini` on Windows, `~/Library/Application Support/Volute` on macOS,
-/// `$XDG_CONFIG_HOME/volute` (or `~/.config/volute`) elsewhere. `None` when the system says
-/// nothing about where configuration goes.
+/// The settings file.
+pub const SETTINGS: &str = "settings.ini";
+/// The volumes remembered per app.
+pub const VOLUMES: &str = "volumes.ini";
+
+/// `%APPDATA%\Volute`. `None` when the system says nothing about where configuration goes.
+pub fn dir() -> Option<PathBuf> {
+    Some(PathBuf::from(std::env::var_os("APPDATA")?).join("Volute"))
+}
+
+/// The settings file's path.
 pub fn path() -> Option<PathBuf> {
-    let dir = if cfg!(windows) {
-        PathBuf::from(std::env::var_os("APPDATA")?).join("Volute")
-    } else if cfg!(target_os = "macos") {
-        PathBuf::from(std::env::var_os("HOME")?).join("Library/Application Support/Volute")
-    } else {
-        match std::env::var_os("XDG_CONFIG_HOME") {
-            Some(dir) => PathBuf::from(dir).join("volute"),
-            None => PathBuf::from(std::env::var_os("HOME")?).join(".config/volute"),
-        }
-    };
-    Some(dir.join("settings.ini"))
+    Some(dir()?.join(SETTINGS))
 }
 
-/// The file's text, or `None` when there is none yet (or it cannot be read).
+/// The text of the file `name` in Volute's folder, or `None` when there is none yet (or it
+/// cannot be read).
+pub fn load_named(name: &str) -> Option<String> {
+    std::fs::read_to_string(dir()?.join(name)).ok()
+}
+
+/// The settings file's text.
 pub fn load() -> Option<String> {
-    std::fs::read_to_string(path()?).ok()
+    load_named(SETTINGS)
 }
 
-/// Writes the file atomically: a temporary file next to it, then a rename, so a crash never
-/// leaves half a file.
+/// Writes the file `name` in Volute's folder atomically: a temporary file next to it, then a
+/// rename, so a crash never leaves half a file.
+pub fn save_named(name: &str, text: &str) -> std::io::Result<()> {
+    let dir = dir().ok_or_else(|| std::io::Error::other("no configuration folder"))?;
+    save_to(&dir.join(name), text)
+}
+
+/// Writes the settings file.
 pub fn save(text: &str) -> std::io::Result<()> {
-    let path = path().ok_or_else(|| std::io::Error::other("no configuration folder"))?;
-    save_to(&path, text)
+    save_named(SETTINGS, text)
 }
 
 fn save_to(path: &std::path::Path, text: &str) -> std::io::Result<()> {
@@ -59,6 +69,6 @@ mod tests {
     #[test]
     fn the_path_is_under_the_user_profile() {
         let path = path().expect("a configuration folder");
-        assert!(path.ends_with("settings.ini"));
+        assert!(path.ends_with("Volute\\settings.ini"));
     }
 }

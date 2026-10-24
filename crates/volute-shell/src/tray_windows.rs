@@ -31,8 +31,9 @@ const WM_UPDATE: u32 = WM_APP + 2;
 /// `/F` does), and the icon must not vanish while Volute runs hidden behind it.
 const WM_SHUTDOWN: u32 = WM_APP + 4;
 const ICON_ID: u32 = 1;
-/// The application icon in the executable's resources, once there is one (design track).
+/// The application icon in the executable's resources, and the muted tray icon.
 const ICON_RESOURCE: u16 = 1;
+const MUTED_RESOURCE: u16 = 2;
 const MENU_OPEN: usize = 1;
 const MENU_QUIT: usize = 2;
 
@@ -44,6 +45,8 @@ struct Shared {
     menu: TrayMenu,
     /// The icon is in the notification area (adding it fails while Explorer is down).
     shown: bool,
+    /// Show the muted icon.
+    muted: bool,
 }
 
 /// Lives on the tray thread, pointed to by the window's user data.
@@ -51,6 +54,8 @@ struct State {
     shared: Arc<Mutex<Shared>>,
     callback: Callback,
     icon: HICON,
+    /// The muted icon, resource 2 (the application icon when there is none).
+    muted_icon: HICON,
     taskbar_created: u32,
 }
 
@@ -78,6 +83,7 @@ impl Tray {
             tooltip: tooltip.to_owned(),
             menu,
             shown: false,
+            muted: false,
         }));
         let (ready_tx, ready_rx) = std::sync::mpsc::channel::<isize>();
         let thread_shared = shared.clone();
@@ -108,6 +114,16 @@ impl Tray {
         self.post(WM_UPDATE);
     }
 
+    pub(crate) fn set_muted(&self, muted: bool) {
+        if let Ok(mut shared) = self.shared.lock() {
+            if shared.muted == muted {
+                return;
+            }
+            shared.muted = muted;
+        }
+        self.post(WM_UPDATE);
+    }
+
     /// Whether the icon is on screen: hiding Volute behind a missing icon would lose it.
     pub(crate) fn is_shown(&self) -> bool {
         self.shared.lock().is_ok_and(|s| s.shown)
@@ -123,14 +139,14 @@ impl Drop for Tray {
     }
 }
 
-fn load_icon(metric: i32) -> HICON {
+fn load_icon(metric: i32, resource: u16) -> HICON {
     // SAFETY: plain system calls; the resource ID is passed as MAKEINTRESOURCE.
     unsafe {
         let size = GetSystemMetricsForDpi(metric, GetDpiForSystem());
         let module = GetModuleHandleW(std::ptr::null());
         let icon = LoadImageW(
             module,
-            ICON_RESOURCE as usize as *const u16,
+            resource as usize as *const u16,
             IMAGE_ICON,
             size,
             size,
@@ -156,6 +172,9 @@ fn icon_data(hwnd: HWND, state: &State) -> NOTIFYICONDATAW {
         ..NOTIFYICONDATAW::default()
     };
     if let Ok(shared) = state.shared.lock() {
+        if shared.muted {
+            data.hIcon = state.muted_icon;
+        }
         wide_into(&shared.tooltip, &mut data.szTip);
     }
     data
@@ -213,7 +232,8 @@ fn run(shared: Arc<Mutex<Shared>>, callback: Callback, ready: std::sync::mpsc::S
     let state = Box::new(State {
         shared,
         callback,
-        icon: load_icon(SM_CXSMICON),
+        icon: load_icon(SM_CXSMICON, ICON_RESOURCE),
+        muted_icon: load_icon(SM_CXSMICON, MUTED_RESOURCE),
         // SAFETY: a NUL-terminated name.
         taskbar_created: unsafe { RegisterWindowMessageW(taskbar.as_ptr()) },
     });
@@ -232,6 +252,7 @@ fn run(shared: Arc<Mutex<Shared>>, callback: Callback, ready: std::sync::mpsc::S
         // The window is destroyed: free what it pointed to.
         let state = Box::from_raw(state);
         DestroyIcon(state.icon);
+        DestroyIcon(state.muted_icon);
     }
 }
 
@@ -265,7 +286,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_UPDATE => {
             let mut data = icon_data(hwnd, state);
-            data.uFlags = NIF_TIP | NIF_SHOWTIP;
+            data.uFlags = NIF_ICON | NIF_TIP | NIF_SHOWTIP;
             // SAFETY: modifying our own icon.
             unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) };
             0
@@ -339,6 +360,29 @@ fn show_menu(hwnd: HWND, state: &State, x: i32, y: i32) {
         MENU_QUIT => (state.callback)(TrayEvent::Quit),
         _ => {}
     }
+}
+
+/// The work area (screen minus taskbar) of the monitor holding (`x`, `y`).
+pub(crate) fn work_area(x: i32, y: i32) -> Option<crate::Rect> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    };
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..MONITORINFO::default()
+    };
+    // SAFETY: plain queries into a sized structure.
+    let ok = unsafe {
+        let monitor = MonitorFromPoint(POINT { x, y }, MONITOR_DEFAULTTONEAREST);
+        GetMonitorInfoW(monitor, &mut info)
+    };
+    (ok != 0).then(|| crate::Rect {
+        x: info.rcWork.left,
+        y: info.rcWork.top,
+        width: info.rcWork.right - info.rcWork.left,
+        height: info.rcWork.bottom - info.rcWork.top,
+    })
 }
 
 #[cfg(test)]
