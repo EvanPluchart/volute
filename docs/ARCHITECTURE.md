@@ -30,8 +30,8 @@ pub trait Audio: Send {
     fn sessions(&mut self, device: &DeviceId, out: &mut Vec<Session>) -> Result<()>;
     /// Peak levels (0.0 to 1.0) of the given sessions and devices. Called only while a meter is shown.
     fn peaks(&mut self, ids: &[MeterId], out: &mut Vec<f32>) -> Result<()>;
-    fn set_volume(&mut self, target: Target, volume: f32) -> Result<()>;
-    fn set_mute(&mut self, target: Target, muted: bool) -> Result<()>;
+    fn set_volume(&mut self, target: &Target, volume: f32) -> Result<()>;
+    fn set_mute(&mut self, target: &Target, muted: bool) -> Result<()>;
     fn set_default_device(&mut self, device: &DeviceId, role: Role) -> Result<()>;
 }
 ```
@@ -110,5 +110,5 @@ pub trait Audio: Send {
 
 * `cargo clippy -- -D warnings` clean; `unsafe` only in `volute-audio` and `volute-shell`, each block with a `// SAFETY:` comment.
 * Settings and profiles are plain text in `%APPDATA%\Volute`, written atomically.
-* Test flags reach any state without clicking. `--no-settings` touches no file and takes no single instance. `--no-hook` installs no keyboard hook. `--no-update-check` goes offline. Tests and CI use all three.
+* Test flags reach any state without clicking. `--no-settings` touches no file and takes no single instance. `--no-hook` installs no keyboard hook. `--no-update-check` goes offline. `--mock` runs on `MockAudio`, so no real app is touched. Tests and CI use them all.
 * Errors reach the user as a short message in the UI, never a silent failure. Logs go to stderr; nothing is written to disk except settings.

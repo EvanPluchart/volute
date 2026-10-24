@@ -4,7 +4,7 @@ A volume mixer for Windows that is fast, pleasant to look at, and does what the 
 
 Native Rust with [Slint](https://slint.dev). Light: it sits in the tray all day, so it must cost nothing.
 
-> **Status:** not started. See [docs/ROADMAP.md](docs/ROADMAP.md). Windows first; Linux (PipeWire) may follow; macOS has no per-app volume without a driver and is out of scope.
+> **Status:** M0 (skeleton) in progress. See [docs/ROADMAP.md](docs/ROADMAP.md). Windows first; Linux (PipeWire) may follow; macOS has no per-app volume without a driver and is out of scope.
 
 ## Why
 
