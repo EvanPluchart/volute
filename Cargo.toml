@@ -20,6 +20,8 @@ slint = { version = "=1.18.1", default-features = false, features = ["std", "com
 slint-build = "=1.18.1"
 # Core Audio (decision 0002), in volute-audio only.
 windows = "=0.62.2"
+# COM callbacks (`implement`), in volute-audio only; the version windows 0.62.2 uses.
+windows-core = "=0.62.2"
 # Plain Win32 for the desktop (tray, single instance), in volute-shell only.
 windows-sys = "=0.61.2"
 # The application icon and version information in the executable (build only).

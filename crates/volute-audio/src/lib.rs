@@ -3,10 +3,13 @@
 //! tests and screenshots. Nothing here knows about the UI.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 mod mock;
 #[cfg(windows)]
 mod windows_backend;
+#[cfg(windows)]
+mod windows_events;
 
 pub use mock::MockAudio;
 #[cfg(windows)]
@@ -29,16 +32,26 @@ pub enum Role {
     Communications,
 }
 
-/// A render device.
+/// Which way sound goes through a device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flow {
+    /// Outputs: speakers, headphones.
+    Render,
+    /// Inputs: microphones.
+    Capture,
+}
+
+/// An audio device, output or input.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Device {
     pub id: DeviceId,
     /// The friendly name ("Speakers (Realtek Audio)").
     pub name: String,
+    pub flow: Flow,
     /// The endpoint scalar, 0.0 to 1.0 (Windows tapers it already).
     pub volume: f32,
     pub muted: bool,
-    /// The default render device for the console role.
+    /// The default device of its flow for the console role.
     pub default: bool,
 }
 
@@ -92,11 +105,45 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// What changed in the sound system, as Core Audio reports it (decision 0002). Events are small
+/// and say what to read again; `ours` marks a change Volute made itself (its event context).
+#[derive(Clone, Debug, PartialEq)]
+pub enum AudioEvent {
+    /// A device was added, removed, enabled, disabled or made default: read the devices again.
+    DevicesChanged,
+    /// A device's volume or mute changed.
+    DeviceVolume {
+        id: DeviceId,
+        volume: f32,
+        muted: bool,
+        ours: bool,
+    },
+    /// A session appeared on this device: read its sessions again.
+    SessionAdded { device: DeviceId },
+    /// A session's volume or mute changed.
+    SessionVolume {
+        id: SessionId,
+        volume: f32,
+        muted: bool,
+        ours: bool,
+    },
+    /// A session started or stopped playing, or ended.
+    SessionState { id: SessionId, state: SessionState },
+}
+
+/// Where a backend sends its events. Called on Core Audio's own threads: it must only queue the
+/// event (a channel send) and return.
+pub type EventSink = Arc<dyn Fn(AudioEvent) + Send + Sync>;
+
 /// The sound system. Every call runs on the audio thread, the only one that touches Core Audio.
 pub trait Audio: Send {
-    /// Every render device with its volume, mute and default role.
+    /// Sends change events to `sink` from now on: devices, and the devices and sessions read by
+    /// `devices` and `sessions` afterwards.
+    fn listen(&mut self, sink: EventSink) -> Result<()>;
+    /// Every active device, outputs and inputs, with its volume, mute and default role.
     fn devices(&mut self, out: &mut Vec<Device>) -> Result<()>;
-    /// Every audio session of a device: process, display name, volume, mute, state.
+    /// Every audio session of a device: process, display name, volume, mute, state. Its sessions
+    /// send events from then on, and so do sessions added to it later.
     fn sessions(&mut self, device: &DeviceId, out: &mut Vec<Session>) -> Result<()>;
     /// Peak levels (0.0 to 1.0) of the given sessions and devices, in order; 0.0 for one that
     /// is gone. Called only while a meter is shown.
@@ -106,7 +153,7 @@ pub trait Audio: Send {
     fn set_default_device(&mut self, device: &DeviceId, role: Role) -> Result<()>;
 }
 
-/// The default render device among `devices`.
-pub fn default_device(devices: &[Device]) -> Option<&Device> {
-    devices.iter().find(|d| d.default)
+/// The default device of `flow` among `devices`.
+pub fn default_device(devices: &[Device], flow: Flow) -> Option<&Device> {
+    devices.iter().find(|d| d.default && d.flow == flow)
 }
