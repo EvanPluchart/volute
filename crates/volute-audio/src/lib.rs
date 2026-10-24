@@ -9,6 +9,8 @@ mod mock;
 #[cfg(windows)]
 mod windows_backend;
 #[cfg(windows)]
+mod policy_config;
+#[cfg(windows)]
 mod windows_events;
 
 pub use mock::MockAudio;

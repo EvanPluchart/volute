@@ -477,8 +477,7 @@ impl Audio for WindowsAudio {
         }
     }
 
-    fn set_default_device(&mut self, _device: &DeviceId, _role: Role) -> Result<()> {
-        // IPolicyConfig comes later in M1 (decision 0002).
-        Err(Error::Unsupported)
+    fn set_default_device(&mut self, device: &DeviceId, role: Role) -> Result<()> {
+        crate::policy_config::set_default(device, role)
     }
 }
