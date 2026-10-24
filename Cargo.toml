@@ -22,6 +22,8 @@ slint-build = "=1.18.1"
 windows = "=0.62.2"
 # Plain Win32 for the desktop (tray, single instance), in volute-shell only.
 windows-sys = "=0.61.2"
+# The application icon and version information in the executable (build only).
+winresource = "=0.1.34"
 flume = "=0.12.0"
 anyhow = "=1.0.104"
 thiserror = "=2.0.21"

@@ -27,6 +27,7 @@ export global TrayText {
 export component AboutWindow inherits Window {
     in property <string> version;
     title: @tr("About Volute");
+    icon: @image-url("../../../assets/brand/png/volute-app-icon-64.png");
     background: Theme.background;
     default-font-size: Theme.font-body;
 
@@ -154,6 +155,7 @@ export component AppWindow inherits Window {
     }
 
     title: "Volute";
+    icon: @image-url("../../../assets/brand/png/volute-app-icon-64.png");
     preferred-width: 440px;
     preferred-height: 520px;
     min-width: 340px;
