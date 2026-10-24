@@ -1,0 +1,32 @@
+{
+  "brand": "Volute",
+  "tagline": "Le mélangeur de volume pour Windows",
+  "brief": "Un mélangeur de volume pour Windows qui vit dans la zone de notification : chaque app, son volume et son niveau en direct, au bout des doigts. Chaleureux, précis, tactile : une bonne table de mixage, pas une page de réglages.",
+  "adjectives": ["chaleureux", "précis", "tactile", "joueur"],
+  "criteria": "Lisible à 16 px dans la barre des tâches, sur fond clair comme sombre ; un état muet évident ; distinct de l'icône haut-parleur de Windows.",
+  "mockups": ["app-icon", "favicon-tab", "readme", "website", "sticker", "social"],
+  "nav": ["Télécharger", "Fonctions", "Nouveautés"],
+  "brand_color": "#5B2BFF",
+  "tile_color": "#5B2BFF",
+  "greyscale": false,
+  "designer": "Volute",
+  "round": 2,
+  "concepts": [
+    {
+      "name": "V à volute",
+      "symbol": "../logo/volute-symbol.svg",
+      "lockup": "../logo/volute-horizontal.svg",
+      "symbol_on_tile": "../logo/volute-symbol-reversed.svg",
+      "symbol_on_dark": "../logo/volute-symbol-reversed.svg",
+      "lockup_on_dark": "../logo/volute-horizontal-reversed.svg",
+      "idea": "Le V de Volute porte une tête de volute, comme un violon : le son qu'on règle à la main.",
+      "rationale": [
+        "Un V qu'on retient, une tête ambre qu'on repère à 16 px",
+        "La volute gravée dans la tête : le nom, le violon, le bouton qu'on tourne",
+        "En muet, la tête passe au rouge et la volute devient une barre"
+      ]
+    }
+  ],
+  "recommendation": "V à volute, palette violet, crème et ambre.",
+  "next_steps": ["Icône dans l'exécutable et la zone de notification", "Design track : contrôles et flyout aux couleurs du logo", "Recherche d'antériorité avant publication"]
+}
