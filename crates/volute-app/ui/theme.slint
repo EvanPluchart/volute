@@ -1,30 +1,42 @@
-// First design tokens, from docs/BRAND.md. Provisional: the design track sets the real values.
-// Views use these instead of literal colours and sizes. The tokens follow Palette.color-scheme,
-// so --dark and --light switch them with the native widgets.
+// Design tokens, from docs/BRAND.md and the logo kit (assets/brand). Views use these instead of
+// literal colours and sizes. They follow Palette.color-scheme, so --dark and --light switch them.
 
 import { Palette } from "std-widgets.slint";
 
 export global Theme {
     out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
 
+    // The logo's colours
+    out property <color> violet: #5B2BFF;
+    out property <color> cream: #FFF1DE;
+    out property <color> amber: #FFB020;
+    out property <color> ink: #1B1530;
+
     // Surfaces and text (AA for every text on its surface, in both themes)
-    out property <color> background: dark ? #141215 : #F7F5F2;
-    out property <color> raised: dark ? #1E1B1F : #FFFFFF;
-    out property <color> border: dark ? #2E2A30 : #E4DFD9;
-    out property <color> text: dark ? #EEEAE5 : #1B1815;
-    out property <color> text-muted: dark ? #A39C95 : #635C55;
+    out property <color> background: dark ? #15111F : #FBF8F3;
+    out property <color> surface: dark ? #1D1729 : #FFFFFF;
+    out property <color> raised: dark ? #2A2239 : #F2ECE4;
+    out property <color> border: dark ? #342B47 : #E6DFD5;
+    out property <color> text: dark ? #F6EFE6 : #1B1530;
+    out property <color> text-muted: dark ? #A99FBC : #645B74;
 
-    // One warm accent for what is live; red only for what cuts sound
-    out property <color> accent: dark ? #F2A65A : #A8561B;
-    out property <color> danger: dark ? #FF6B6B : #C2302E;
+    // The band at the top of the mixer: the master, on the brand's violet in both themes
+    out property <color> band: #5B2BFF;
+    out property <color> band-text: #FFF1DE;
+    out property <color> band-muted: #FFF1DE.with-alpha(0.72);
+    out property <color> band-track: #FFFFFF.with-alpha(0.24);
+    out property <color> band-hover: #FFFFFF.with-alpha(0.12);
 
-    // Meters: track, calm, loud, clipping
-    out property <color> meter-track: dark ? #2A262B : #ECE7E1;
-    out property <color> meter-calm: accent;
-    out property <color> meter-loud: dark ? #FFD27A : #D08A1E;
-    out property <color> meter-clip: danger;
+    // Faders: the track, the value, the live level (the one accent), the thumb
+    out property <color> track: dark ? #382E4D : #E8E0F4;
+    out property <color> fill: dark ? #9076FF : #5B2BFF;
+    out property <color> level: dark ? #FFB020 : #E39200;
+    out property <color> thumb: dark ? #FFF1DE : #FFFFFF;
 
-    // Radii, spacing, type
+    // Red only for what cuts sound: mute, an error
+    out property <color> danger: dark ? #FF6B7A : #D2304A;
+
+    // Radii, spacing, type, motion
     out property <length> radius-control: 8px;
     out property <length> radius-card: 14px;
     out property <length> space-1: 4px;
@@ -35,4 +47,7 @@ export global Theme {
     out property <length> font-caption: 12px;
     out property <length> font-body: 14px;
     out property <length> font-title: 18px;
+    out property <length> font-figure: 20px;
+    out property <duration> motion-in: 120ms;
+    out property <duration> motion-out: 180ms;
 }

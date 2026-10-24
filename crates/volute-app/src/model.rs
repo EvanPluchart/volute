@@ -5,14 +5,14 @@ use std::time::{Duration, Instant};
 
 use slint::{Model, SharedString, VecModel};
 
-use crate::AppRow;
-use crate::mixer::RowData;
+use crate::mixer::{DeviceData, RowData};
+use crate::{AppRow, DeviceRow};
 
 /// How long after the user last moved a slider its row keeps the user's value, whatever an
 /// older reading of the volume says.
 const HOLD: Duration = Duration::from_millis(500);
 
-/// The slider the user is moving, if any.
+/// The slider the user is moving, if any (an app's key or a device's id).
 #[derive(Default)]
 pub struct Held {
     key: Option<(SharedString, Instant)>,
@@ -23,37 +23,51 @@ impl Held {
         self.key = Some((key, Instant::now()));
     }
 
-    fn holds(&self, key: &str) -> bool {
+    pub fn holds(&self, key: &str) -> bool {
         self.key
             .as_ref()
             .is_some_and(|(k, at)| k == key && at.elapsed() < HOLD)
     }
 }
 
-fn to_row(data: &RowData) -> AppRow {
+pub fn to_row(data: &RowData) -> AppRow {
     AppRow {
         key: data.key.as_str().into(),
         name: data.name.as_str().into(),
+        initial: data.name.chars().find(|c| c.is_alphanumeric()).map_or("?".into(), |c| c.to_uppercase().collect::<String>()).as_str().into(),
         system: data.system,
         volume: data.volume,
         muted: data.muted,
         playing: data.playing,
+        icon: data.icon,
     }
 }
 
-/// Makes `model` hold `rows`, in order, touching only what changed. A row whose slider is held
-/// keeps its volume.
-pub fn patch_rows(model: &VecModel<AppRow>, rows: &[RowData], held: &Held) {
-    for (i, data) in rows.iter().enumerate() {
-        let mut row = to_row(data);
-        let current = (i < model.row_count())
-            .then(|| model.row_data(i))
-            .flatten();
+pub fn to_device(data: &DeviceData) -> DeviceRow {
+    DeviceRow {
+        id: data.id.as_str().into(),
+        name: data.name.as_str().into(),
+        output: data.output,
+        volume: data.volume,
+        muted: data.muted,
+        default: data.default,
+    }
+}
+
+/// Makes `model` hold `rows`, in order, touching only what changed. `keep` may carry values over
+/// from the current row (a slider the user holds keeps its volume).
+fn patch_keyed<T: Clone + PartialEq + 'static>(
+    model: &VecModel<T>,
+    rows: Vec<T>,
+    key: impl Fn(&T) -> SharedString,
+    keep: impl Fn(&T, &mut T),
+) {
+    for (i, mut row) in rows.iter().cloned().enumerate() {
+        let k = key(&row);
+        let current = (i < model.row_count()).then(|| model.row_data(i)).flatten();
         match current {
-            Some(current) if current.key == row.key => {
-                if held.holds(&row.key) || (current.volume - row.volume).abs() < 0.001 {
-                    row.volume = current.volume;
-                }
+            Some(current) if key(&current) == k => {
+                keep(&current, &mut row);
                 if current != row {
                     model.set_row_data(i, row);
                 }
@@ -61,12 +75,10 @@ pub fn patch_rows(model: &VecModel<AppRow>, rows: &[RowData], held: &Held) {
             _ => {
                 // The row is further down (it moved up) or new.
                 let later = (i + 1..model.row_count())
-                    .find(|&j| model.row_data(j).is_some_and(|r| r.key == row.key));
+                    .find(|&j| model.row_data(j).is_some_and(|r| key(&r) == k));
                 if let Some(j) = later {
                     let moved = model.remove(j);
-                    if held.holds(&row.key) {
-                        row.volume = moved.volume;
-                    }
+                    keep(&moved, &mut row);
                 }
                 model.insert(i, row);
             }
@@ -77,11 +89,40 @@ pub fn patch_rows(model: &VecModel<AppRow>, rows: &[RowData], held: &Held) {
     }
 }
 
+/// The app rows. A row whose slider is held keeps its volume, and so does one whose new
+/// reading is the same value seen through the curve's rounding.
+pub fn patch_rows(model: &VecModel<AppRow>, rows: &[RowData], held: &Held) {
+    patch_keyed(
+        model,
+        rows.iter().map(to_row).collect(),
+        |r| r.key.clone(),
+        |current, new| {
+            if held.holds(&new.key) || (current.volume - new.volume).abs() < 0.001 {
+                new.volume = current.volume;
+            }
+        },
+    );
+}
+
+/// The devices, outputs and inputs, same rules.
+pub fn patch_devices(model: &VecModel<DeviceRow>, devices: &[DeviceData], held: &Held) {
+    patch_keyed(
+        model,
+        devices.iter().map(to_device).collect(),
+        |d| d.id.clone(),
+        |current, new| {
+            if held.holds(&new.id) || (current.volume - new.volume).abs() < 0.001 {
+                new.volume = current.volume;
+            }
+        },
+    );
+}
+
 /// Makes `model` hold `levels`, setting only the ones that moved visibly.
 pub fn patch_levels(model: &VecModel<f32>, levels: &[f32]) {
     for (i, &level) in levels.iter().enumerate() {
         match model.row_data(i) {
-            Some(current) if (current - level).abs() < 0.002 => {}
+            Some(current) if (current - level).abs() < 0.004 => {}
             Some(_) => model.set_row_data(i, level),
             None => model.push(level),
         }
@@ -103,6 +144,7 @@ mod tests {
             volume,
             muted: false,
             playing: true,
+            icon: -1,
         }
     }
 
@@ -137,6 +179,24 @@ mod tests {
         patch_rows(&model, &[data("a", 0.2), data("b", 0.2)], &held);
         assert_eq!(model.row_data(0).unwrap().volume, 0.5, "held: the user's value");
         assert_eq!(model.row_data(1).unwrap().volume, 0.2, "not held: the new reading");
+    }
+
+    #[test]
+    fn devices_patch_by_id() {
+        let model = VecModel::<DeviceRow>::default();
+        let held = Held::default();
+        let device = |id: &str, default: bool| DeviceData {
+            id: id.into(),
+            name: id.into(),
+            output: true,
+            volume: 0.5,
+            muted: false,
+            default,
+        };
+        patch_devices(&model, &[device("a", true), device("b", false)], &held);
+        patch_devices(&model, &[device("b", true), device("a", false)], &held);
+        let ids: Vec<(String, bool)> = model.iter().map(|d| (d.id.to_string(), d.default)).collect();
+        assert_eq!(ids, [("b".to_owned(), true), ("a".to_owned(), false)]);
     }
 
     #[test]

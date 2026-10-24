@@ -42,3 +42,30 @@ msgstr "Ouvrir Volute"
 
 msgid "Quit"
 msgstr "Quitter"
+
+msgid "No output"
+msgstr "Aucune sortie"
+
+msgid "Outputs"
+msgstr "Sorties"
+
+msgid "Inputs"
+msgstr "Entrées"
+
+msgid "Default"
+msgstr "Par défaut"
+
+msgid "Make default"
+msgstr "Utiliser par défaut"
+
+msgid "Mixer"
+msgstr "Mélangeur"
+
+msgid "Devices"
+msgstr "Périphériques"
+
+msgid "{}: muted"
+msgstr "{} : coupé"
+
+msgid "{}: {}%"
+msgstr "{} : {} %"
