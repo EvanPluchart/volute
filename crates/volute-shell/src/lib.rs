@@ -5,6 +5,8 @@
 use std::sync::Arc;
 
 #[cfg(windows)]
+mod close_guard_windows;
+#[cfg(windows)]
 mod instance_windows;
 pub mod settings_file;
 #[cfg(windows)]
@@ -46,6 +48,17 @@ pub fn single_instance(on_show: impl Fn(ShowRequest) + Send + Sync + 'static) ->
         let _ = on_show;
         Some(Instance {})
     }
+}
+
+/// Stops other programs' close requests (`taskkill` without `/F`) from destroying the UI
+/// toolkit's hidden message window, which would cut the tray and a second launch off from the
+/// UI thread. Call on the UI thread once the event loop exists; returns how many windows it
+/// guards (1 on Windows).
+pub fn guard_ui_thread() -> usize {
+    #[cfg(windows)]
+    return close_guard_windows::guard_event_target();
+    #[cfg(not(windows))]
+    0
 }
 
 /// What happens on the tray icon, reported to the callback given to `Tray::new`.
