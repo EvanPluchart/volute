@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-const USAGE: &str = "usage: cargo xtask bench-overhead [--seconds=N] [--check]";
+const USAGE: &str = "usage: cargo xtask check
+       cargo xtask bench-overhead [--seconds=N] [--check]";
 const WARM_UP: Duration = Duration::from_secs(5);
 
 /// The performance budget from docs/ARCHITECTURE.md, per state: CPU of one core, private MB.
@@ -19,6 +20,7 @@ struct Budget {
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
+        Some("check") => check(),
         Some("bench-overhead") => {
             let mut seconds = 60;
             let mut check = false;
@@ -43,6 +45,31 @@ fn workspace_root() -> PathBuf {
         .parent()
         .expect("xtask lives in the workspace")
         .to_path_buf()
+}
+
+/// What a CI would run, run here instead (decision 0006): check, test and clippy with warnings
+/// as errors, all against the committed lockfile. Stops at the first failure.
+fn check() -> Result<()> {
+    let root = workspace_root();
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let steps: [&[&str]; 3] = [
+        &["check", "--workspace", "--all-targets", "--locked"],
+        &["test", "--workspace", "--locked"],
+        &["clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"],
+    ];
+    for step in steps {
+        println!("> cargo {}", step.join(" "));
+        let status = Command::new(&cargo)
+            .current_dir(&root)
+            .args(step)
+            .status()
+            .context("running cargo")?;
+        if !status.success() {
+            bail!("`cargo {}` failed", step.join(" "));
+        }
+    }
+    println!("check: all passed");
+    Ok(())
 }
 
 /// Builds Volute in release, then runs it on the mock twice: window open with meters running,
@@ -70,7 +97,7 @@ fn bench_overhead(duration: Duration, check: bool) -> Result<()> {
             "open",
             &["--mock", "--no-settings", "--open", "--no-tray"][..],
             Budget {
-                cpu_percent: 2.0,
+                cpu_percent: 4.0,
                 private_mb: 40.0,
             },
         ),

@@ -26,6 +26,7 @@ cargo check --workspace
 cargo test --workspace
 cargo clippy --workspace -- -D warnings
 cargo run -p volute -- --open --no-settings
+cargo xtask check          # check, test and clippy, all --locked: run before every push (no hosted CI, decision 0006)
 cargo xtask bench-overhead
 ```
 

@@ -1,10 +1,10 @@
 # Roadmap
 
-Each milestone ends with its exit criteria met, checked by hand on Windows 11, CI green, and the budget measured. Work on the current milestone only.
+Each milestone ends with its exit criteria met, checked by hand on Windows 11, `cargo xtask check` passing locally (decision 0006), and the budget measured. Work on the current milestone only.
 
 ## M0 — Skeleton
 
-* Workspace, crates and their dependency rules, pinned Slint, CI, `cargo xtask bench-overhead`.
+* Workspace, crates and their dependency rules, pinned Slint, `cargo xtask check`, `cargo xtask bench-overhead`.
 * `volute-audio`: the `Audio` trait, the Windows backend listing render devices and the sessions of the default device with volume, mute and peak, and `MockAudio`.
 * `volute-app`: a plain window listing those sessions, each with a slider, a mute button and a live meter; dragging the slider changes the app's volume.
 * Lifecycle from day one: explicit quit, exit watchdog, single instance with acknowledgement, test flags.
@@ -14,7 +14,7 @@ Each milestone ends with its exit criteria met, checked by hand on Windows 11, C
 * A test changes the volume and mute of a session it started itself, and leaves the others alone.
 * Closing the window ends the process, and a test proves it.
 * The bench prints the open and idle cost.
-* CI is green.
+* `cargo xtask check` passes.
 
 ## Design track (alongside M1 and M2)
 
@@ -58,7 +58,7 @@ Each milestone ends with its exit criteria met, checked by hand on Windows 11, C
 
 * Inno Setup installer, per user, no administrator rights, start with Windows as an option.
 * Updates from the app, as Vigie and Recto do (decision 0005): check at launch and every 6 hours, one click to install, checksum verified, relaunch.
-* Release workflow publishing `SHA256SUMS`; landing page in French and English; About window with the Slint attribution.
+* Release built locally with `cargo xtask dist`, publishing `SHA256SUMS` (decision 0006); landing page in French and English; About window with the Slint attribution.
 * **The repository must be public before the first release with the updater:** for anyone outside it, a private repository's `releases/latest` answers nothing, so the check would find nothing.
 
 ## Later, maybe
