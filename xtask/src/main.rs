@@ -77,8 +77,8 @@ fn check() -> Result<()> {
     Ok(())
 }
 
-/// Builds Volute in release, then runs it twice: window open with meters running, then idle in
-/// the tray with nothing shown. Prints CPU of one core and peak private memory. With `check`,
+/// Builds Volute in release, then runs it three times: the main window open with meters running,
+/// the flyout open over the tray, then idle in the tray with nothing shown. Prints CPU of one core and peak private memory. With `check`,
 /// fails when a state is over budget. On the mock, unless `real`: then on this machine's Core
 /// Audio, read only (no settings file, so no remembered volume is ever applied).
 fn bench_overhead(duration: Duration, check: bool, real: bool) -> Result<()> {
@@ -109,6 +109,15 @@ fn bench_overhead(duration: Duration, check: bool, real: bool) -> Result<()> {
             },
         ),
         (
+            // The mixer as it is used: the flyout over the tray, the main window hidden.
+            "flyout",
+            &["--no-settings", "--flyout"][..],
+            Budget {
+                cpu_percent: 4.0,
+                private_mb: 40.0,
+            },
+        ),
+        (
             "idle",
             &["--no-settings"][..],
             Budget {
@@ -131,7 +140,7 @@ fn bench_overhead(duration: Duration, check: bool, real: bool) -> Result<()> {
         stop(&mut child);
         let m = result?;
         println!(
-            "  {name:<5} CPU {:.3} % of one core (after a {} s warm-up), private {:.1} MB peak \
+            "  {name:<6} CPU {:.3} % of one core (after a {} s warm-up), private {:.1} MB peak \
              ({:.1} MB at the end); budget < {} %, < {} MB",
             m.cpu_percent,
             WARM_UP.as_secs(),

@@ -23,5 +23,6 @@ M1 asks for the master volume to follow the mouse wheel over Volute's tray icon,
 ## Consequences
 
 * Moving the pointer quickly across the icon registers and unregisters raw input once each; it costs nothing measurable.
+* Raw input has one target window per device class and process. winit registers mouse and keyboard raw input on its own hidden window at start, for its device events, only while a Volute window has focus; Slint does not use them. The tray's registration takes the mouse over from it, and its removal leaves the mouse unregistered; winit's keyboard registration is untouched. The tray registers again on every hover instead of trusting its own flag.
 * If Explorer restarts, the icon is added again (decision 0004) and the rectangle is read again on the next hover.
 * The README states what the tray reads, next to what the keyboard hook reads (M2).

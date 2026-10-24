@@ -316,8 +316,7 @@ pub fn show_main() {
 }
 
 fn show_about() {
-    let version = env!("CARGO_PKG_VERSION");
-    with_ui(|ui| {
+    let about = with_ui(|ui| {
         if ui.about.is_none() {
             ui.about = AboutWindow::new().ok();
             if let Some(about) = &ui.about
@@ -326,11 +325,14 @@ fn show_about() {
                 about.invoke_set_scheme(ui.scheme);
             }
         }
-        if let Some(about) = &ui.about {
-            about.set_version(version.into());
-            let _ = about.show();
-        }
-    });
+        ui.about.as_ref().map(ComponentHandle::clone_strong)
+    })
+    .flatten();
+    // Shown outside the borrow: showing a window may run handlers that need the UI state.
+    if let Some(about) = about {
+        about.set_version(env!("CARGO_PKG_VERSION").into());
+        let _ = about.show();
+    }
 }
 
 /// Opens the About window at start (`--about`).
@@ -368,6 +370,14 @@ pub fn toggle_flyout(x: i32, y: i32) {
     let just_closed = with_ui(|ui| ui.closed_at.is_some_and(|at| at.elapsed() < REOPEN_GUARD)).unwrap_or(false);
     if !just_closed {
         open_flyout(x, y);
+    }
+}
+
+/// A second launch of Volute asks for it: the flyout, at the bottom right as a tray click would
+/// open it, unless it is open already.
+pub fn show_flyout_for_launch() {
+    if with_ui(|ui| ui.flyout.is_none()).unwrap_or(false) {
+        open_flyout(i32::MAX / 2, i32::MAX / 2);
     }
 }
 

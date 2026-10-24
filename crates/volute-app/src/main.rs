@@ -39,16 +39,20 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    // One Volute per session: a second launch shows the first and exits. Test runs
-    // (--no-settings) may run next to the user's Volute.
-    let instance = if options.no_settings {
+    // A test run (--no-settings, or --mock, whose demo apps have real executable paths) takes
+    // no single instance and neither reads nor writes remembered volumes: it never reaches the
+    // user's Volute or a real app.
+    let test_run = options.no_settings || options.mock;
+    // One Volute per session: a second launch opens the first one's flyout and exits
+    // (decision 0004).
+    let instance = if test_run {
         None
     } else {
         match volute_shell::single_instance(|request| {
             // Confirmed from the UI thread once shown: a hung Volute never confirms, and the
             // new launch then starts instead of exiting.
             let _ = slint::invoke_from_event_loop(move || {
-                ui::show_main();
+                ui::show_flyout_for_launch();
                 request.done();
             });
         }) {
@@ -93,12 +97,12 @@ fn main() -> anyhow::Result<()> {
     };
     let looks: Box<dyn Looks> = if options.mock { Box::new(NoLooks) } else { Box::new(ExeLooks) };
     // Volumes the user set in Volute, per app; a test run neither reads nor writes them.
-    let memory = (!options.no_settings).then(|| {
+    let memory = (!test_run).then(|| {
         settings_file::load_named(settings_file::VOLUMES)
             .map(|text| Memory::parse(&text))
             .unwrap_or_default()
     });
-    let save: Option<SaveMemory> = (!options.no_settings).then(|| {
+    let save: Option<SaveMemory> = (!test_run).then(|| {
         Box::new(|memory: &Memory| {
             if let Err(err) = settings_file::save_named(settings_file::VOLUMES, &memory.to_text()) {
                 eprintln!("volute: saving volumes: {err}");

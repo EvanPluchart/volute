@@ -358,6 +358,9 @@ fn hovered(hwnd: HWND, state: &State) {
     if unsafe { Shell_NotifyIconGetRect(&id, &mut rect) } == 0 {
         state.rect.set(rect);
         if pointer_in(rect) {
+            // Registered again on every hover rather than trusted from the flag: another
+            // registration in this process (winit's, at start) may have taken the mouse since.
+            state.listening.set(false);
             listen(hwnd, state, true);
         }
     }
