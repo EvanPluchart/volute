@@ -156,11 +156,13 @@ fn stop(child: &mut Child) {
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
         if matches!(child.try_wait(), Ok(Some(_))) {
+            println!("        (quit cleanly)");
             return;
         }
         thread::sleep(Duration::from_millis(100));
     }
     // Started by this task, so stopping it here is safe.
+    println!("        (did not quit: killed)");
     let _ = child.kill();
     let _ = child.wait();
 }
