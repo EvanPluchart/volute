@@ -1,6 +1,6 @@
 # 0011 — The landing page
 
-**Status:** accepted, 2026-10-25.
+**Status:** accepted, 2026-10-25. Publishing changed the same day: a branch, no workflow (see below).
 
 ## Context
 
@@ -17,3 +17,7 @@ M4 asks for a landing page in French and English. Vigie and Recto each have one 
 
 * Publishing needs, in order: the repository public, Pages set to "GitHub Actions", one run of the workflow.
 * The download buttons point to `releases/latest`, which works once a release is published.
+
+## Published from a branch, without a workflow (2026-10-25)
+
+The author asked for no GitHub workflow at all. The workflow is gone; Pages serves the `gh-pages` branch instead, which holds the contents of `site/` (plus `.nojekyll`) and is pushed by hand: `git subtree split --prefix site -b gh-pages` then `git push origin gh-pages --force`, or the same from a worktree. GitHub's own Pages deployment still runs for a branch source; nothing of Volute's runs in Actions.

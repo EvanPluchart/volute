@@ -4608,7 +4608,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "volute"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "flume",
@@ -4622,7 +4622,7 @@ dependencies = [
 
 [[package]]
 name = "volute-audio"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "thiserror 2.0.21",
  "windows",
@@ -4631,14 +4631,14 @@ dependencies = [
 
 [[package]]
 name = "volute-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "volute-audio",
 ]
 
 [[package]]
 name = "volute-shell"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "windows-sys 0.61.2",
 ]
@@ -5520,7 +5520,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "windows-sys 0.61.2",

@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{ERROR_NO_MORE_ITEMS, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::UI::Input::{
     GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER, RID_INPUT,
     RIDEV_INPUTSINK, RIDEV_REMOVE, RIM_TYPEMOUSE, RegisterRawInputDevices,
@@ -514,8 +514,12 @@ fn icon_record() -> Option<(String, bool)> {
                 std::ptr::null_mut(),
             )
         };
-        if code != 0 {
+        // Only the end of the list stops the walk: a key that cannot be read is skipped.
+        if code == ERROR_NO_MORE_ITEMS {
             break;
+        }
+        if code != 0 {
+            continue;
         }
         let name = String::from_utf16_lossy(&name[..len as usize]);
         let key = format!(r"{ICON_SETTINGS}\{name}");
@@ -531,18 +535,46 @@ fn icon_record() -> Option<(String, bool)> {
     found
 }
 
-/// Whether Explorer's `recorded` path names `exe`. Explorer writes a path under a known folder
-/// as the folder's GUID and the rest (`{GUID}\Volute\volute.exe`); the rest must then match.
+/// Whether Explorer's `recorded` path names `exe`, ignoring case. Explorer writes a path under a
+/// known folder as the folder's GUID and the rest (`{GUID}\Volute\volute.exe`): the GUID is
+/// resolved first, so only the very same path matches, never another copy of Volute.
 fn same_exe(recorded: &str, exe: &str) -> bool {
-    if recorded.eq_ignore_ascii_case(exe) {
-        return true;
+    let resolved = resolve_known_folder(recorded);
+    // Compared as characters, never cut at a byte offset: paths may hold any letter.
+    resolved.as_deref().unwrap_or(recorded).to_lowercase() == exe.to_lowercase()
+}
+
+/// `{GUID}\rest` with the known folder's path in place of its GUID.
+fn resolve_known_folder(recorded: &str) -> Option<String> {
+    let (guid, rest) = recorded.strip_prefix('{')?.split_once('}')?;
+    Some(format!("{}{rest}", known_folder(&parse_guid(guid)?)?))
+}
+
+/// `6D809377-6AF0-444B-8957-A3773F02200E`, the form between braces.
+fn parse_guid(text: &str) -> Option<windows_sys::core::GUID> {
+    let dashes = text.char_indices().filter(|&(_, c)| c == '-').map(|(i, _)| i).collect::<Vec<_>>();
+    if text.len() != 36 || dashes != [8, 13, 18, 23] {
+        return None;
     }
-    recorded.starts_with('{')
-        && recorded.split_once('}').is_some_and(|(_, rest)| {
-            rest.len() > 1
-                && exe.len() > rest.len()
-                && exe[exe.len() - rest.len()..].eq_ignore_ascii_case(rest)
-        })
+    let hex: String = text.chars().filter(|&c| c != '-').collect();
+    u128::from_str_radix(&hex, 16).ok().map(windows_sys::core::GUID::from_u128)
+}
+
+fn known_folder(id: &windows_sys::core::GUID) -> Option<String> {
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::SHGetKnownFolderPath;
+    let mut path: *mut u16 = std::ptr::null_mut();
+    // SAFETY: a GUID and a pointer to fill with a NUL-terminated string, which the shell
+    // allocates and CoTaskMemFree releases, even on failure.
+    unsafe {
+        let ok = SHGetKnownFolderPath(id, 0 as _, std::ptr::null_mut(), &mut path) >= 0 && !path.is_null();
+        let text = ok.then(|| {
+            let len = (0..).take_while(|&i| *path.add(i) != 0).count();
+            String::from_utf16_lossy(std::slice::from_raw_parts(path, len))
+        });
+        CoTaskMemFree(path.cast());
+        text
+    }
 }
 
 fn current_exe() -> Option<String> {
@@ -792,16 +824,18 @@ mod tests {
         let exe = r"C:\Users\a\AppData\Local\Programs\Volute\volute.exe";
         assert!(same_exe(exe, exe));
         assert!(same_exe(&exe.to_uppercase(), exe));
-        // A known folder written as its GUID.
-        assert!(same_exe(
-            r"{6D809377-6AF0-444B-8957-A3773F02200E}\Volute\volute.exe",
-            r"C:\Program Files\Volute\volute.exe"
-        ));
-        assert!(!same_exe(
-            r"{6D809377-6AF0-444B-8957-A3773F02200E}\Other\volute.exe",
-            r"C:\Program Files\Volute\volute.exe"
-        ));
-        assert!(!same_exe(r"{6D809377-6AF0-444B-8957-A3773F02200E}", exe));
         assert!(!same_exe(r"C:\Elsewhere\volute.exe", exe));
+        // A known folder written as its GUID (Program Files) is resolved, then compared whole.
+        let program_files = known_folder(&parse_guid("905E63B6-C1BF-494E-B29C-65B732D3D21A").unwrap()).unwrap();
+        let installed = format!(r"{program_files}\Volute\volute.exe");
+        assert!(same_exe(r"{905E63B6-C1BF-494E-B29C-65B732D3D21A}\Volute\volute.exe", &installed));
+        // Another copy of Volute ending the same way is not this one.
+        assert!(!same_exe(r"{905E63B6-C1BF-494E-B29C-65B732D3D21A}\Volute\volute.exe", r"D:\Volute\volute.exe"));
+        assert!(!same_exe(r"{not-a-guid}\Volute\volute.exe", r"D:\Volute\volute.exe"));
+        // Any letter in the path, wherever the lengths fall: nothing is cut inside a character.
+        for tail in ["", "x", "\\Volute\\volute.exe", "é", "日本"] {
+            let _ = same_exe(&format!("{{6D809377-6AF0-444B-8957-A3773F02200E}}{tail}"), r"C:\Users\Clément\日本\volute.exe");
+        }
+        assert!(parse_guid("6D809377-6AF0-444B-8957-A3773F02200").is_none());
     }
 }

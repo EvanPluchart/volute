@@ -12,7 +12,7 @@ A volume mixer for Windows 10 and 11, native, light, and pleasant to touch.</p>
   <img src="docs/screenshots/flyout-dark.png" alt="Volute's mixer opened from the tray: the master output, then one line per app with its icon, volume and live level, then the microphone" width="360">
 </p>
 
-> **Status: early.** The mixer works; it is awaiting its first full day of use, and there is no public release yet. The volume keys and their on-screen display come next ([roadmap](docs/ROADMAP.md)).
+> **Status: early.** The mixer works and 0.1.0 is the first release. The volume keys and their on-screen display come next ([roadmap](docs/ROADMAP.md)).
 
 ## What it does
 
@@ -23,7 +23,7 @@ Windows' own mixer is four clicks deep in Settings, shows no levels and forgets 
 * **Switch the output** from the top of the mixer, in one click: Volute sets it as Windows' default for every role.
 * **Every device** in the main window: each output's volume and mute, the microphones with their level.
 * **Remembers:** the volume you give an app in Volute comes back the next time it plays.
-* **From the tray:** the wheel over the icon moves the master volume, the menu mutes everything, and the icon turns red when sound is cut.
+* **From the tray:** a speaker next to the clock, like Windows' own, whose amber waves follow the master volume; a click opens the mixer, the wheel over it moves the master volume, the menu mutes everything. Closing the main window keeps Volute there (a setting).
 * **Updates itself:** it looks for a new version at start and every 6 hours, and installs it in one click after checking its checksum. You can turn that off.
 * **Dark and light**, following Windows or set by hand, in English and French.
 
@@ -50,12 +50,13 @@ It is Rust and [Slint](https://slint.dev) with a software renderer: no browser e
 * **The mouse wheel over its tray icon, and nothing else** ([decision 0007](docs/decisions/0007-tray-wheel.md)): only the wheel, only while the pointer is over the icon, kept nowhere.
 * **The microphone:** never captured. Its level shows while another app uses it ([decision 0008](docs/decisions/0008-microphone-level.md)).
 * **Network:** one request to GitHub to see if a new version is out, and the download when you accept it. No account, no telemetry, no crash upload.
-* **Files:** `settings.ini` and `volumes.ini` in `%APPDATA%\Volute`. Nothing else is written.
+* **Files:** `settings.ini` and `volumes.ini` in `%APPDATA%\Volute`, and a downloaded update in `%LOCALAPPDATA%\Volute\Updates` until it is installed.
+* **Registry:** the `Volute` value under `Run` when you choose to start with Windows, and, once, Windows' own "show next to the clock" choice for Volute's icon, never against a choice you made ([decision 0012](docs/decisions/0012-tray-icon-and-launch.md)). Nothing else is written.
 * **Rights:** none beyond yours. It installs for your account only and never asks for administrator rights.
 
 ## Install
 
-When the first release is out, it will be on the [releases page](https://github.com/EvanPluchart/volute/releases/latest):
+Download it from the [releases page](https://github.com/EvanPluchart/volute/releases/latest):
 
 * **`Volute-x.y.z-setup.exe`**: installs for your account in `%LOCALAPPDATA%\Programs\Volute`, no administrator prompt, optional start with Windows. Updates itself.
 * **`Volute-x.y.z-portable.zip`**: one executable to run from anywhere. It tells you when a new version is out.

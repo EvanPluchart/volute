@@ -39,3 +39,19 @@ The mock is the worst case: every app, the master and the microphone move every 
 ## How to repeat it
 
 `cargo xtask bench-overhead` (60 s per state by default, `--real` for this machine's devices, read only), on an idle machine. Update this table and the one in `docs/ARCHITECTURE.md`.
+
+## Before 0.1.0: three runs
+
+After the speaker icon, the foreground watch and the repaint fix, three runs back to back (60 s per state, mock):
+
+| State | Run 1 | Run 2 | Run 3 | Budget |
+|---|---|---|---|---|
+| Main window open | 2.89 % | 3.01 % | 3.41 % | < 4 % |
+| Flyout open | 2.07 % | 3.29 % | (0.20 %, not valid) | < 4 % |
+| Idle in the tray | 0.000 %, 3.5 MB | 0.000 %, 3.5 MB | 0.000 %, 3.5 MB | < 0.1 %, < 25 MB |
+
+The median open state is 3.0 %, inside the budget. Run 3's flyout closed during the measure: another window came to the front, and the flyout now closes then, as it should; that figure measures a closed flyout.
+
+* **Minimising now stops the meters.** Windows reports minimising as a resize to 0 × 0, not as occlusion, so before this the meters kept running behind a minimised window. They stop now, and the window is drawn whole when it comes back.
+* **The foreground watch** reads the window in front every 150 ms only while the flyout is open: one cheap call, stopped with the flyout.
+* **The speaker** changes its icon only when the number of waves changes: one `NIM_MODIFY`, not one per volume step.

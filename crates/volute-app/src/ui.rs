@@ -207,7 +207,11 @@ pub fn in_tray() -> bool {
 
 /// Removes the tray icon and closes the flyout (decision 0004's last steps).
 pub fn uninstall() {
-    let (tray, flyout) = with_ui(|ui| (ui.tray.take(), ui.flyout.take())).unwrap_or_default();
+    let (tray, flyout) = with_ui(|ui| {
+        ui.flyout_watch.stop();
+        (ui.tray.take(), ui.flyout.take())
+    })
+    .unwrap_or_default();
     if let Some(flyout) = flyout {
         let _ = flyout.hide();
     }
@@ -535,16 +539,24 @@ fn window_handle(w: &slint::winit_030::winit::window::Window) -> Option<isize> {
 /// How often the open flyout checks which window is in front.
 const FLYOUT_WATCH: Duration = Duration::from_millis(150);
 
+/// While Windows settles the front after a launch (the Start menu closing, the previous app
+/// coming back), a change of the window in front is not a click elsewhere.
+const FLYOUT_SETTLE: Duration = Duration::from_millis(600);
+
 /// The flyout closes when another window comes to the front. Losing the focus says so when the
 /// flyout had it; when Windows refused it the front (a launch it did not allow), a click
-/// elsewhere still changes the window in front, which this sees. Only while the flyout is open.
-fn watch_flyout(generation: u64, hwnd: isize, front_at_open: isize) {
+/// elsewhere still changes the window in front, which this sees once the front has settled.
+/// Only while the flyout is open.
+fn watch_flyout(generation: u64, hwnd: isize, mut front_at_open: isize) {
     let mut was_front = false;
+    let opened = Instant::now();
     with_ui(|ui| {
         ui.flyout_watch.start(slint::TimerMode::Repeated, FLYOUT_WATCH, move || {
             let front = volute_shell::foreground_window();
             if front == hwnd {
                 was_front = true;
+            } else if !was_front && opened.elapsed() < FLYOUT_SETTLE {
+                front_at_open = front;
             } else if front != 0 && (was_front || front != front_at_open) {
                 with_ui(|ui| {
                     if ui.flyout_gen == generation {
