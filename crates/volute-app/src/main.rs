@@ -69,9 +69,10 @@ fn main() -> anyhow::Result<()> {
     } else {
         settings_file::load().map(|text| Settings::parse(&text)).unwrap_or_default()
     };
-    // A test flag, never saved: only test runs take it.
-    if options.close_to_tray && test_run {
-        settings.close_to_tray = true;
+    // A test run quits when its window closes, unless --close-to-tray asks it to stay: never
+    // saved.
+    if test_run {
+        settings.close_to_tray = options.close_to_tray;
     }
     let theme = match options.dark {
         Some(true) => Theme::Dark,

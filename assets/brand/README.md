@@ -9,7 +9,8 @@ The V of Volute carries a scroll head, as a violin does: the sound you shape by 
 | Need | File |
 |---|---|
 | App icon (Windows executable, taskbar, Start) | `icons/volute.ico` (16 to 256 px), `logo/volute-app-icon.svg` |
-| Tray icon | `icons/tray.ico`, muted: `icons/tray-muted.ico` |
+| Tray icon (in the executable) | `icons/tray/speaker-{white,ink}-{0,1,2,3,muted}.ico`, from `src/tray.mjs` and `src/tray.sh` (decision 0013) |
+| The V on its tile, small (no longer the tray icon) | `icons/tray.ico`, muted: `icons/tray-muted.ico` |
 | Tray, one colour (monochrome taskbar style) | `icons/tray-white*.svg`, `icons/tray-black*.svg` |
 | Logo on light grounds | `logo/volute-horizontal.svg`, `logo/volute-symbol.svg` |
 | Logo on dark or violet grounds | `logo/volute-horizontal-reversed.svg`, `logo/volute-symbol-reversed.svg` |

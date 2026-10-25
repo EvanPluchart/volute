@@ -30,11 +30,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     MSG, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SM_CXICON, SM_CXSMICON,
     SetForegroundWindow, SetTimer, SetWindowLongPtrW, TPM_BOTTOMALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
     TrackPopupMenu, TranslateMessage, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
-    WM_ENDSESSION, WM_INPUT, WM_LBUTTONDBLCLK, WM_MOUSEMOVE, WM_NULL, WM_TIMER, WNDCLASSW, WS_OVERLAPPED,
+    WM_ENDSESSION, WM_INPUT, WM_LBUTTONDBLCLK, WM_MOUSEMOVE, WM_NULL, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSW, WS_OVERLAPPED,
     GetCursorPos, RI_MOUSE_WHEEL,
 };
 
-use crate::{TrayEvent, TrayMenu};
+use crate::{TrayEvent, TrayGlyph, TrayMenu};
 
 /// Messages the icon sends to the window, and the ones the app posts to it.
 const WM_TRAY: u32 = WM_APP + 1;
@@ -44,9 +44,13 @@ const WM_NOTIFY_USER: u32 = WM_APP + 3;
 /// `/F` does), and the icon must not vanish while Volute runs hidden behind it.
 const WM_SHUTDOWN: u32 = WM_APP + 4;
 const ICON_ID: u32 = 1;
-/// The application icon in the executable's resources, and the muted tray icon.
+/// The application icon in the executable's resources (for notifications), and the first of the
+/// tray's speakers: white from 10, ink from 20, in `TrayGlyph::index` order (decision 0013).
 const ICON_RESOURCE: u16 = 1;
-const MUTED_RESOURCE: u16 = 2;
+const SPEAKER_WHITE: u16 = 10;
+const SPEAKER_INK: u16 = 20;
+/// Where Windows says whether the taskbar is light.
+const PERSONALIZE: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
 const MENU_OPEN: usize = 1;
 const MENU_QUIT: usize = 2;
 const MENU_MUTE: usize = 3;
@@ -66,8 +70,8 @@ struct Shared {
     menu: TrayMenu,
     /// The icon is in the notification area (adding it fails while Explorer is down).
     shown: bool,
-    /// Show the muted icon.
-    muted: bool,
+    /// What the speaker shows; `Muted` also checks "Mute all" in the menu.
+    glyph: TrayGlyph,
     /// A notification to show (title, body), taken by the tray thread.
     notification: Option<(String, String)>,
     /// Volute is removing its icon: `WM_SHUTDOWN` from anyone else (a broadcast) is ignored.
@@ -78,9 +82,10 @@ struct Shared {
 struct State {
     shared: Arc<Mutex<Shared>>,
     callback: Callback,
-    icon: HICON,
-    /// The muted icon, resource 2 (the application icon when there is none).
-    muted_icon: HICON,
+    /// The speakers: white (for a dark taskbar), then ink, each in `TrayGlyph::index` order.
+    speakers: [[HICON; 5]; 2],
+    /// The taskbar is light: the ink speaker shows.
+    light: Cell<bool>,
     /// The large application icon, for notifications.
     balloon_icon: HICON,
     taskbar_created: u32,
@@ -116,7 +121,7 @@ impl Tray {
             tooltip: tooltip.to_owned(),
             menu,
             shown: false,
-            muted: false,
+            glyph: TrayGlyph::default(),
             notification: None,
             closing: false,
         }));
@@ -149,12 +154,12 @@ impl Tray {
         self.post(WM_UPDATE);
     }
 
-    pub(crate) fn set_muted(&self, muted: bool) {
+    pub(crate) fn set_glyph(&self, glyph: TrayGlyph) {
         if let Ok(mut shared) = self.shared.lock() {
-            if shared.muted == muted {
+            if shared.glyph == glyph {
                 return;
             }
-            shared.muted = muted;
+            shared.glyph = glyph;
         }
         self.post(WM_UPDATE);
     }
@@ -231,13 +236,10 @@ fn icon_data(hwnd: HWND, state: &State) -> NOTIFYICONDATAW {
         uID: ICON_ID,
         uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP,
         uCallbackMessage: WM_TRAY,
-        hIcon: state.icon,
         ..NOTIFYICONDATAW::default()
     };
     if let Ok(shared) = state.shared.lock() {
-        if shared.muted {
-            data.hIcon = state.muted_icon;
-        }
+        data.hIcon = state.speakers[usize::from(state.light.get())][shared.glyph.index()];
         wide_into(&shared.tooltip, &mut data.szTip);
     }
     data
@@ -295,8 +297,9 @@ fn run(shared: Arc<Mutex<Shared>>, callback: Callback, promote: bool, ready: std
     let state = Box::new(State {
         shared,
         callback,
-        icon: load_icon(SM_CXSMICON, ICON_RESOURCE),
-        muted_icon: load_icon(SM_CXSMICON, MUTED_RESOURCE),
+        speakers: [SPEAKER_WHITE, SPEAKER_INK]
+            .map(|first| std::array::from_fn(|i| load_icon(SM_CXSMICON, first + i as u16))),
+        light: Cell::new(light_taskbar()),
         balloon_icon: load_icon(SM_CXICON, ICON_RESOURCE),
         listening: Cell::new(false),
         rect: Cell::new(RECT::default()),
@@ -323,8 +326,9 @@ fn run(shared: Arc<Mutex<Shared>>, callback: Callback, promote: bool, ready: std
         }
         // The window is destroyed: free what it pointed to.
         let state = Box::from_raw(state);
-        DestroyIcon(state.icon);
-        DestroyIcon(state.muted_icon);
+        for icon in state.speakers.iter().flatten() {
+            DestroyIcon(*icon);
+        }
         DestroyIcon(state.balloon_icon);
     }
 }
@@ -382,6 +386,17 @@ unsafe extern "system" fn window_proc(
         }
         WM_TIMER if wparam == PROMOTE_TIMER => {
             promote_once(hwnd, state);
+            0
+        }
+        // The taskbar may have turned light or dark: the speaker follows it.
+        WM_SETTINGCHANGE => {
+            let light = light_taskbar();
+            if state.light.replace(light) != light {
+                let mut data = icon_data(hwnd, state);
+                data.uFlags = NIF_ICON;
+                // SAFETY: modifying our own icon.
+                unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) };
+            }
             0
         }
         // Someone else's request to close this hidden window: Volute decides when its icon goes.
@@ -465,6 +480,12 @@ fn promote_once(hwnd: HWND, state: &State) {
 }
 
 const ICON_SETTINGS: &str = r"Control Panel\NotifyIconSettings";
+
+/// Whether the taskbar is light (Settings > Personalisation > Colours): dark when unknown, as
+/// Windows 11's default.
+fn light_taskbar() -> bool {
+    read_dword(PERSONALIZE, "SystemUsesLightTheme") == Some(1)
+}
 
 /// Windows' record of this program's icon: its key under `ICON_SETTINGS`, and whether a
 /// choice is recorded in it (`IsPromoted` present, whatever its value).
@@ -675,7 +696,7 @@ fn wheel(hwnd: HWND, lparam: LPARAM, state: &State) {
 }
 
 fn show_menu(hwnd: HWND, state: &State, x: i32, y: i32) {
-    let Ok((labels, muted)) = state.shared.lock().map(|s| (s.menu.clone(), s.muted)) else {
+    let Ok((labels, muted)) = state.shared.lock().map(|s| (s.menu.clone(), s.glyph == TrayGlyph::Muted)) else {
         return;
     };
     let (open, mute, settings, quit) =
@@ -761,7 +782,8 @@ mod tests {
             panic!("no tray window");
         };
         tray.set_tooltip("Volute test · 50 %");
-        tray.set_muted(true);
+        tray.set_glyph(TrayGlyph::Muted);
+        tray.set_glyph(TrayGlyph::Waves(2));
         drop(tray);
     }
 

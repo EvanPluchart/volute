@@ -107,15 +107,6 @@ component NavItem inherits Rectangle {
     accessible-label: root.label;
     accessible-checked: root.selected;
     accessible-action-default => { root.clicked(); }
-    // The selected place's mark, the one violet in the rail.
-    if root.selected: Rectangle {
-        x: 0;
-        y: (parent.height - self.height) / 2;
-        width: 3px;
-        height: 16px;
-        border-radius: 1.5px;
-        background: Theme.accent;
-    }
     HorizontalLayout {
         padding-left: Theme.space-3;
         padding-right: Theme.space-3;
@@ -168,6 +159,10 @@ component Heading inherits VerticalLayout {
 // The main window: a rail, then the mixer, the devices, settings or About.
 export component AppWindow inherits Window {
     in-out property <int> tab;
+    // Bumped when the window comes back from minimised: Slint 1.18's software renderer redraws
+    // only what changed, and the restored window's buffer is empty, so the whole window must
+    // count as changed (docs/audits/2026-10-25-performance.md, finding 2).
+    in property <int> repaint;
 
     // 0 follows the system, 1 dark, 2 light.
     public function set-scheme(scheme: int) {
@@ -180,7 +175,7 @@ export component AppWindow inherits Window {
     preferred-height: 600px;
     min-width: 560px;
     min-height: 420px;
-    background: Theme.background;
+    background: root.repaint >= 0 ? Theme.background : Theme.background;
     default-font-size: Theme.font-body;
     default-font-family: Theme.font-family;
 

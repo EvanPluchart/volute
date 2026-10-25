@@ -1,4 +1,4 @@
-//! Opening a web page in the default browser.
+//! Opening a web page in the default browser, and bringing a window to the front.
 
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -24,4 +24,19 @@ pub(crate) fn open_url(url: &str) -> bool {
     };
     // Values above 32 mean success.
     result as usize > 32
+}
+
+/// Brings one of Volute's windows to the front. Windows allows it after a click on the tray
+/// icon (Explorer passes the right on) or a launch; otherwise it only flashes the taskbar.
+pub(crate) fn bring_forward(hwnd: isize) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+    // SAFETY: a window handle of this process; a stale one makes the call fail.
+    unsafe { SetForegroundWindow(hwnd as _) != 0 }
+}
+
+/// The window in the foreground, as an integer (0 when none).
+pub(crate) fn foreground_window() -> isize {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    // SAFETY: a plain query.
+    unsafe { GetForegroundWindow() as isize }
 }

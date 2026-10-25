@@ -1,6 +1,6 @@
 # 0009 — Closing the main window
 
-**Status:** accepted, 2026-10-25. Amends decision 0004 (lifecycle).
+**Status:** accepted, 2026-10-25. Amends decision 0004 (lifecycle). Default changed the same day: on (see below).
 
 ## Context
 
@@ -17,3 +17,7 @@ Volute lives in the tray: the flyout is how it is used day to day, and the main 
 
 * 0004's integration test keeps its meaning: with the setting off (the default, and every test run's), closing the window ends the process, with or without the tray.
 * Test runs (`--no-settings`, `--mock`) can turn the setting on for the session, and never save it. `--close-to-tray` does it from the command line; `quits_on_close` checks that closing still ends Volute without a tray icon, and keeps it running with one.
+
+## Default changed: on (2026-10-25)
+
+On the first real install the author closed the main window and expected Volute to stay next to the clock: for a mixer that lives in the tray, that is the expected behaviour. The setting is now on by default, saved as `keep_in_tray`. The `close_to_tray` line that 0.0.1 wrote (always its default, off) is dropped when read, so the new default applies. Test runs still quit when their window closes unless `--close-to-tray` is given, so `quits_on_close` keeps its meaning.

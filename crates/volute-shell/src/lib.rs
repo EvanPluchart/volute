@@ -118,6 +118,39 @@ pub enum TrayEvent {
     Wheel { delta: i32 },
 }
 
+/// What the tray's speaker shows (decision 0013): the master muted, or its volume in waves, as
+/// Windows draws its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TrayGlyph {
+    /// No wave (silent) to three.
+    Waves(u8),
+    /// A red cross.
+    #[default]
+    Muted,
+}
+
+impl TrayGlyph {
+    /// The glyph for a master at `percent` (0 to 100): no wave at 0, then one wave up to a
+    /// third, two up to two thirds, three above.
+    pub fn for_volume(percent: u32, muted: bool) -> TrayGlyph {
+        match percent {
+            _ if muted => TrayGlyph::Muted,
+            0 => TrayGlyph::Waves(0),
+            1..=33 => TrayGlyph::Waves(1),
+            34..=66 => TrayGlyph::Waves(2),
+            _ => TrayGlyph::Waves(3),
+        }
+    }
+
+    /// Its place among the icons: 0 to 3 waves, then muted (the executable's resource order).
+    pub fn index(self) -> usize {
+        match self {
+            TrayGlyph::Waves(n) => usize::from(n.min(3)),
+            TrayGlyph::Muted => 4,
+        }
+    }
+}
+
 /// Menu labels, given by the app so they follow its language.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrayMenu {
@@ -189,13 +222,33 @@ impl Tray {
         let _ = (title, body);
     }
 
-    /// Shows the muted icon (the master output is muted) or the normal one.
-    pub fn set_muted(&self, muted: bool) {
+    /// Shows the master's volume or mute as the speaker draws it (decision 0013).
+    pub fn set_glyph(&self, glyph: TrayGlyph) {
         #[cfg(windows)]
-        self.inner.set_muted(muted);
+        self.inner.set_glyph(glyph);
         #[cfg(not(windows))]
-        let _ = muted;
+        let _ = glyph;
     }
+}
+
+/// Brings a Volute window (its handle as an integer) to the front: the flyout after a click on
+/// the tray icon. `false` when Windows refused.
+pub fn bring_forward(hwnd: isize) -> bool {
+    #[cfg(windows)]
+    return desktop_windows::bring_forward(hwnd);
+    #[cfg(not(windows))]
+    {
+        let _ = hwnd;
+        false
+    }
+}
+
+/// The window in the foreground, as an integer handle; 0 when none or off Windows.
+pub fn foreground_window() -> isize {
+    #[cfg(windows)]
+    return desktop_windows::foreground_window();
+    #[cfg(not(windows))]
+    0
 }
 
 /// Opens an `https:` page in the default browser; anything else is refused.
@@ -475,6 +528,22 @@ mod tests {
     use super::*;
 
     const AREA: Rect = Rect { x: 0, y: 0, width: 1920, height: 1032 };
+
+    #[test]
+    fn the_speaker_follows_the_volume() {
+        let waves = |p| TrayGlyph::for_volume(p, false);
+        assert_eq!(waves(0), TrayGlyph::Waves(0));
+        assert_eq!(waves(1), TrayGlyph::Waves(1));
+        assert_eq!(waves(33), TrayGlyph::Waves(1));
+        assert_eq!(waves(34), TrayGlyph::Waves(2));
+        assert_eq!(waves(66), TrayGlyph::Waves(2));
+        assert_eq!(waves(67), TrayGlyph::Waves(3));
+        assert_eq!(waves(100), TrayGlyph::Waves(3));
+        assert_eq!(TrayGlyph::for_volume(80, true), TrayGlyph::Muted);
+        let order: Vec<usize> = (0..=3).map(|n| TrayGlyph::Waves(n).index()).collect();
+        assert_eq!(order, [0, 1, 2, 3]);
+        assert_eq!(TrayGlyph::Muted.index(), 4);
+    }
 
     /// The installer is held open (others may only read it) while it starts: Windows must still
     /// run it, and nobody may replace it. A harmless program stands in for the installer.

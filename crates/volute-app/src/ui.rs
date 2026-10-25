@@ -64,10 +64,13 @@ struct Ui {
     main_visible: bool,
     main_shown_once: bool,
     main_occluded: bool,
+    main_minimized: bool,
     /// Wheel delta over the tray icon not yet worth a notch (precision touchpads).
     wheel: i32,
     /// Clears the notice of a failed command.
     notice_timer: slint::Timer,
+    /// Watches which window is in front while the flyout is open.
+    flyout_watch: slint::Timer,
     /// What the audio thread was last told.
     audio_visible: bool,
 }
@@ -125,12 +128,24 @@ pub fn install(app: &AppWindow, setup: Setup) {
         }
         slint::CloseRequestResponse::HideWindow
     });
-    // Minimised or covered: its meters stop.
+    // Minimised or covered: its meters stop. Windows reports minimising as a resize to 0 × 0,
+    // not as occlusion.
     app.window().on_winit_window_event(|_, event| {
         use slint::winit_030::winit::event::WindowEvent;
-        if let WindowEvent::Occluded(occluded) = event {
-            with_ui(|ui| ui.main_occluded = *occluded);
-            update_visibility();
+        match event {
+            WindowEvent::Occluded(occluded) => {
+                with_ui(|ui| ui.main_occluded = *occluded);
+                update_visibility();
+            }
+            WindowEvent::Resized(size) => {
+                let minimized = size.width == 0 || size.height == 0;
+                let restored = with_ui(|ui| std::mem::replace(&mut ui.main_minimized, minimized) && !minimized);
+                if restored == Some(true) {
+                    repaint_main();
+                }
+                update_visibility();
+            }
+            _ => {}
         }
         EventResult::Propagate
     });
@@ -168,10 +183,20 @@ pub fn install(app: &AppWindow, setup: Setup) {
             main_visible: false,
             main_shown_once: false,
             main_occluded: false,
+            main_minimized: false,
             wheel: 0,
             notice_timer: slint::Timer::default(),
+            flyout_watch: slint::Timer::default(),
             audio_visible: false,
         });
+    });
+}
+
+/// The main window is back on screen: all of it is drawn again, not only what changed.
+fn repaint_main() {
+    with_ui(|ui| {
+        ui.app.set_repaint(ui.app.get_repaint().wrapping_add(1));
+        ui.app.window().request_redraw();
     });
 }
 
@@ -304,7 +329,7 @@ pub fn apply(frame: Frame) {
             }
         }
         if let (Some(tray), Some(state)) = (&ui.tray, &frame.tray) {
-            tray.set_muted(state.muted);
+            tray.set_glyph(volute_shell::TrayGlyph::for_volume(state.volume, state.muted));
             let text = ui.app.global::<TrayText>().invoke_tooltip(
                 state.device.as_str().into(),
                 state.volume as i32,
@@ -339,7 +364,7 @@ fn show_notice(ui: &mut Ui, notice: &str) {
 /// Tells the audio thread whether any mixer is on screen, when that changes.
 fn update_visibility() {
     with_ui(|ui| {
-        let visible = (ui.main_visible && !ui.main_occluded) || ui.flyout.is_some();
+        let visible = (ui.main_visible && !ui.main_occluded && !ui.main_minimized) || ui.flyout.is_some();
         if visible != ui.audio_visible {
             ui.audio_visible = visible;
             let _ = ui.commands.send(Input::Ui(Command::Visible(visible)));
@@ -470,24 +495,66 @@ pub fn open_flyout(x: i32, y: i32) {
         close_flyout_later(generation);
         slint::CloseRequestResponse::HideWindow
     });
+    let front_at_open = volute_shell::foreground_window();
     let _ = flyout.show();
     flyout.window().with_winit_window(|w| {
         w.set_skip_taskbar(true);
         w.set_corner_preference(CornerPreference::Round);
-        w.focus_window();
     });
-    // The window only appears on the next turn of the event loop, and appearing gives it a
-    // taskbar button again: it is taken off once the flyout is on screen.
+    // The window only appears on the next turn of the event loop: before that, asking for the
+    // front does nothing, and appearing gives it a taskbar button again. Both once it is there.
     slint::Timer::single_shot(Duration::from_millis(50), move || {
-        with_ui(|ui| {
-            if let Some(flyout) = ui.flyout.as_ref().filter(|_| ui.flyout_gen == generation) {
-                flyout.window().with_winit_window(|w| w.set_skip_taskbar(true));
-            }
-        });
+        let hwnd = with_ui(|ui| {
+            let flyout = ui.flyout.as_ref().filter(|_| ui.flyout_gen == generation)?;
+            flyout.window().with_winit_window(|w| {
+                w.set_skip_taskbar(true);
+                window_handle(w)
+            })
+        })
+        .flatten()
+        .flatten();
+        if let Some(hwnd) = hwnd {
+            volute_shell::bring_forward(hwnd);
+            watch_flyout(generation, hwnd, front_at_open);
+        }
     });
     with_ui(|ui| ui.flyout = Some(flyout));
     place_flyout();
     update_visibility();
+}
+
+/// A window's handle as an integer, for `volute_shell`.
+fn window_handle(w: &slint::winit_030::winit::window::Window) -> Option<isize> {
+    use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match w.window_handle().ok()?.as_raw() {
+        RawWindowHandle::Win32(handle) => Some(handle.hwnd.get()),
+        _ => None,
+    }
+}
+
+/// How often the open flyout checks which window is in front.
+const FLYOUT_WATCH: Duration = Duration::from_millis(150);
+
+/// The flyout closes when another window comes to the front. Losing the focus says so when the
+/// flyout had it; when Windows refused it the front (a launch it did not allow), a click
+/// elsewhere still changes the window in front, which this sees. Only while the flyout is open.
+fn watch_flyout(generation: u64, hwnd: isize, front_at_open: isize) {
+    let mut was_front = false;
+    with_ui(|ui| {
+        ui.flyout_watch.start(slint::TimerMode::Repeated, FLYOUT_WATCH, move || {
+            let front = volute_shell::foreground_window();
+            if front == hwnd {
+                was_front = true;
+            } else if front != 0 && (was_front || front != front_at_open) {
+                with_ui(|ui| {
+                    if ui.flyout_gen == generation {
+                        ui.closed_at = Some(Instant::now());
+                    }
+                });
+                close_flyout_later(generation);
+            }
+        });
+    });
 }
 
 /// Puts the flyout next to where it was opened, inside the work area.
@@ -534,7 +601,11 @@ fn close_flyout_later(generation: u64) {
 
 /// Hides and drops the flyout, so its frame buffer is freed.
 pub fn close_flyout() {
-    let flyout = with_ui(|ui| ui.flyout.take()).flatten();
+    let flyout = with_ui(|ui| {
+        ui.flyout_watch.stop();
+        ui.flyout.take()
+    })
+    .flatten();
     if let Some(flyout) = flyout {
         let _ = flyout.hide();
     }
