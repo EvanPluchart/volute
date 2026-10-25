@@ -87,6 +87,11 @@ fn main() -> anyhow::Result<()> {
         eprintln!("volute: no event target window to guard; a close request may cut off the tray");
     }
 
+    // Translations can be chosen once a component exists; the tray reads its labels next.
+    if let Some(lang) = &options.lang {
+        let _ = slint::select_bundled_translation(lang);
+    }
+
     // The audio thread stops on Command::Quit; Core Audio's callbacks share its channel.
     let (inputs, receiver) = flume::unbounded::<Input>();
     let check_updates = settings.check_updates;
@@ -97,6 +102,10 @@ fn main() -> anyhow::Result<()> {
     app.set_tab(options.tab);
     // Kept by the updater, which releases it just before an installer replaces this Volute.
     update::hold_instance(instance);
+    if !test_run {
+        // The installer of an earlier update has run: its download can go.
+        volute_shell::update::clean_downloads();
+    }
     if options.may_check_updates() {
         let current = options.pretend_version.clone().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned());
         ui::start_updates(check_updates, current, options.updated);
@@ -151,8 +160,14 @@ fn main() -> anyhow::Result<()> {
         ui::show_main();
     }
     if options.flyout {
-        // As a click at the far bottom right would: placement keeps it inside the work area.
-        slint::Timer::single_shot(Duration::from_millis(300), || ui::open_flyout(i32::MAX / 2, i32::MAX / 2));
+        // As a click at the far bottom right would: placement keeps it inside the work area. Or
+        // on the left of the primary screen, with room to grow.
+        let (x, y) = if options.flyout_center {
+            volute_shell::work_area_at(0, 0).map_or((0, 0), |a| (a.x + a.width / 5, a.y + a.height / 2))
+        } else {
+            (i32::MAX / 2, i32::MAX / 2)
+        };
+        slint::Timer::single_shot(Duration::from_millis(300), move || ui::open_flyout(x, y));
     }
 
     // Runs until Quit (tray menu, sign-out) or the main window closes.

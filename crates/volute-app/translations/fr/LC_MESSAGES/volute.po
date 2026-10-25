@@ -204,3 +204,6 @@ msgstr "Signaler un problème"
 
 msgid "MIT licence"
 msgstr "Licence MIT"
+
+msgid "The release is not signed with Volute's key, so it was not installed."
+msgstr "La version n'est pas signée avec la clé de Volute : elle n'a pas été installée."

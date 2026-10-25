@@ -64,6 +64,15 @@ fn is_remote(exe: &Path) -> bool {
     }
 }
 
+/// Whether `group` is a whole icon directory (`GRPICONDIR`): a 6-byte header (reserved 0,
+/// type 1, count) followed by `count` entries of 14 bytes.
+fn icon_directory_fits(group: &[u8]) -> bool {
+    let Some(header) = group.get(..6) else { return false };
+    let word = |at: usize| u16::from_le_bytes([header[at], header[at + 1]]);
+    let count = usize::from(word(4));
+    word(0) == 0 && word(2) == 1 && count > 0 && group.len() >= 6 + 14 * count
+}
+
 /// The executable's first icon group, as Explorer shows it, read straight from its resources.
 /// This avoids the shell icon APIs, which load shell32 and its dependencies (about 20 MB of
 /// images in the working set).
@@ -87,6 +96,11 @@ fn icon(path: &[u16], size: u32) -> Option<Icon> {
             let Some(group) = resource(module, name, kind) else {
                 return 1;
             };
+            // Windows reads as many entries as the directory claims, with no length given:
+            // a directory from someone else's file must hold them all.
+            if !icon_directory_fits(group) {
+                return 1;
+            }
             let id = LookupIconIdFromDirectoryEx(
                 group.as_ptr(),
                 1,
@@ -337,6 +351,24 @@ mod tests {
         );
         assert_eq!(info.publisher.as_deref(), Some("Microsoft Corporation"));
         assert!(info.description.is_some());
+    }
+
+    #[test]
+    fn icon_directories_must_hold_their_entries() {
+        let directory = |count: u16, entries: usize| {
+            let mut d = vec![0, 0, 1, 0];
+            d.extend_from_slice(&count.to_le_bytes());
+            d.resize(6 + 14 * entries, 0);
+            d
+        };
+        assert!(icon_directory_fits(&directory(2, 2)));
+        // Claims more entries than it holds: Windows would read past the resource.
+        assert!(!icon_directory_fits(&directory(500, 2)));
+        assert!(!icon_directory_fits(&directory(0, 0)));
+        assert!(!icon_directory_fits(&[0, 0, 1]));
+        let mut cursors = directory(1, 1);
+        cursors[2] = 2;
+        assert!(!icon_directory_fits(&cursors));
     }
 
     #[test]

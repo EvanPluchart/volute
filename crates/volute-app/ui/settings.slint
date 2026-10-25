@@ -34,7 +34,8 @@ export global Updates {
     // 2 open the release page (running as administrator), 3 nothing (no updater here).
     in property <int> mode;
     // Why it failed, worded below: 1 check, 2 no checksum, 3 checksum mismatch, 4 download,
-    // 5 installer not started, 6 a test run stopped before installing.
+    // 5 installer not started, 6 a test run stopped before installing, 7 not signed with the
+    // release key.
     in property <int> error-kind;
     in property <string> error;
 
@@ -77,6 +78,8 @@ export global UpdateText {
             return @tr("The installer could not be started.");
         } else if (kind == 6) {
             return @tr("Test run: the installer was downloaded and checked, not run.");
+        } else if (kind == 7) {
+            return @tr("The release is not signed with Volute's key, so it was not installed.");
         }
         return "";
     }

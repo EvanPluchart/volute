@@ -15,7 +15,10 @@ use windows_sys::Win32::Networking::WinHttp::{
     WinHttpOpenRequest, WinHttpQueryDataAvailable, WinHttpQueryHeaders, WinHttpReadData,
     WinHttpReceiveResponse, WinHttpSendRequest, WinHttpSetOption, WinHttpSetTimeouts,
 };
-use windows_sys::Win32::Security::Cryptography::{BCRYPT_SHA256_ALG_HANDLE, BCryptHash};
+use windows_sys::Win32::Security::Cryptography::{
+    BCRYPT_ECCKEY_BLOB, BCRYPT_ECCPUBLIC_BLOB, BCRYPT_ECDSA_P256_ALG_HANDLE, BCRYPT_ECDSA_PUBLIC_P256_MAGIC,
+    BCRYPT_SHA256_ALG_HANDLE, BCryptDestroyKey, BCryptHash, BCryptImportKeyPair, BCryptVerifySignature,
+};
 use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation};
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::System::Registry::{
@@ -26,6 +29,8 @@ use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken}
 
 /// Largest download accepted: the installer is a few MB.
 const MAX_BYTES: usize = 64 << 20;
+/// A download that trickles is given up after this long, whatever each read takes.
+const DOWNLOAD_WITHIN: std::time::Duration = std::time::Duration::from_secs(600);
 
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain([0]).collect()
@@ -166,7 +171,11 @@ impl Response {
     fn read_into(&self, out: &mut impl Write) -> Result<usize, String> {
         let mut total = 0usize;
         let mut chunk = vec![0u8; 64 << 10];
+        let deadline = std::time::Instant::now() + DOWNLOAD_WITHIN;
         loop {
+            if std::time::Instant::now() > deadline {
+                return Err("download too slow".into());
+            }
             let mut available = 0u32;
             // SAFETY: a received request; valid out pointer.
             if unsafe { WinHttpQueryDataAvailable(self.request.0, &mut available) } == 0 {
@@ -231,9 +240,8 @@ pub(crate) fn download(url: &str, path: &Path) -> Result<(), String> {
     }
 }
 
-/// The SHA-256 of a file.
-pub(crate) fn sha256_file(path: &Path) -> Option<[u8; 32]> {
-    let data = std::fs::read(path).ok()?;
+/// The SHA-256 of `data`, through Windows' own BCrypt.
+pub(crate) fn sha256(data: &[u8]) -> Option<[u8; 32]> {
     let mut digest = [0u8; 32];
     // SAFETY: the pseudo-handle of SHA-256; input and output sizes as passed.
     let status = unsafe {
@@ -248,6 +256,35 @@ pub(crate) fn sha256_file(path: &Path) -> Option<[u8; 32]> {
         )
     };
     (status == 0).then_some(digest)
+}
+
+/// Whether `signature` (r then s, 32 bytes each) is the ECDSA P-256 signature of `hash` by the
+/// key whose public point is `public` (x then y).
+pub(crate) fn verify_p256(public: &[u8; 64], hash: &[u8; 32], signature: &[u8; 64]) -> bool {
+    let header = BCRYPT_ECCKEY_BLOB { dwMagic: BCRYPT_ECDSA_PUBLIC_P256_MAGIC, cbKey: 32 };
+    let mut blob = Vec::with_capacity(8 + 64);
+    blob.extend_from_slice(&header.dwMagic.to_le_bytes());
+    blob.extend_from_slice(&header.cbKey.to_le_bytes());
+    blob.extend_from_slice(public);
+    let mut key = std::ptr::null_mut();
+    // SAFETY: a public key blob of the size given; the key handle is destroyed below.
+    unsafe {
+        if BCryptImportKeyPair(
+            BCRYPT_ECDSA_P256_ALG_HANDLE,
+            std::ptr::null_mut(),
+            BCRYPT_ECCPUBLIC_BLOB,
+            &mut key,
+            blob.as_ptr(),
+            blob.len() as u32,
+            0,
+        ) != 0
+        {
+            return false;
+        }
+        let ok = BCryptVerifySignature(key, std::ptr::null(), hash.as_ptr(), 32, signature.as_ptr(), 64, 0) == 0;
+        BCryptDestroyKey(key);
+        ok
+    }
 }
 
 /// This process runs with administrator rights: it must not run a downloaded installer.
@@ -327,13 +364,47 @@ fn install_location(root: HKEY) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// A throwaway key signs a hash as `cargo xtask dist` does; the verification accepts it, and
+    /// refuses another hash, another key and a damaged signature.
+    #[test]
+    fn verifies_p256_signatures() {
+        use windows_sys::Win32::Security::Cryptography::{
+            BCRYPT_ECCPRIVATE_BLOB, BCryptExportKey, BCryptFinalizeKeyPair, BCryptGenerateKeyPair, BCryptSignHash,
+        };
+        // SAFETY: a key made, exported and used here, then destroyed; buffers of the sizes given.
+        let (public, signature) = unsafe {
+            let mut key = std::ptr::null_mut();
+            assert_eq!(BCryptGenerateKeyPair(BCRYPT_ECDSA_P256_ALG_HANDLE, &mut key, 256, 0), 0);
+            assert_eq!(BCryptFinalizeKeyPair(key, 0), 0);
+            let mut blob = [0u8; 104];
+            let mut len = 0u32;
+            assert_eq!(BCryptExportKey(key, std::ptr::null_mut(), BCRYPT_ECCPRIVATE_BLOB, blob.as_mut_ptr(), 104, &mut len, 0), 0);
+            let hash = sha256(b"SHA256SUMS").unwrap();
+            let mut signature = [0u8; 64];
+            assert_eq!(BCryptSignHash(key, std::ptr::null(), hash.as_ptr(), 32, signature.as_mut_ptr(), 64, &mut len, 0), 0);
+            BCryptDestroyKey(key);
+            let mut public = [0u8; 64];
+            public.copy_from_slice(&blob[8..72]);
+            (public, signature)
+        };
+        let hash = sha256(b"SHA256SUMS").unwrap();
+        assert!(verify_p256(&public, &hash, &signature));
+        assert!(!verify_p256(&public, &sha256(b"SHA256SUMS, changed").unwrap(), &signature));
+        let mut damaged = signature;
+        damaged[10] ^= 1;
+        assert!(!verify_p256(&public, &hash, &damaged));
+        let mut other = public;
+        other[63] ^= 1;
+        assert!(!verify_p256(&other, &hash, &signature), "not on the curve, or another key");
+    }
+
     #[test]
     fn hashes_a_file() {
         let dir = std::env::temp_dir().join(format!("volute-sha-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("abc.txt");
         std::fs::write(&file, b"abc").unwrap();
-        let digest = sha256_file(&file).expect("hashed");
+        let digest = sha256(&std::fs::read(&file).unwrap()).expect("hashed");
         let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(
             hex,

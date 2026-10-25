@@ -9,7 +9,8 @@ use anyhow::{Context, Result, bail};
 
 const USAGE: &str = "usage: cargo xtask check
        cargo xtask bench-overhead [--seconds=N] [--check] [--real]
-       cargo xtask dist";
+       cargo xtask dist
+       cargo xtask release-key";
 const WARM_UP: Duration = Duration::from_secs(5);
 
 /// The performance budget from docs/ARCHITECTURE.md, per state: CPU of one core, private MB.
@@ -23,6 +24,7 @@ fn main() -> Result<()> {
     match args.next().as_deref() {
         Some("check") => check(),
         Some("dist") => dist(),
+        Some("release-key") => release_key(),
         Some("bench-overhead") => {
             let mut seconds = 60;
             let mut check = false;
@@ -128,10 +130,26 @@ fn dist() -> Result<()> {
         sums.push_str(&format!("{hex}  {name}\n"));
     }
     std::fs::write(out.join("SHA256SUMS"), &sums)?;
-    for name in [setup_name.as_str(), zip_name.as_str(), "SHA256SUMS"] {
+    // Signed with the release key, whose public half is built into Volute: the updater trusts
+    // no checksum without it (decision 0010).
+    let signature = sign::sign(&root, sums.as_bytes())?;
+    let hex: String = signature.iter().map(|b| format!("{b:02x}")).collect();
+    std::fs::write(out.join("SHA256SUMS.sig"), format!("{hex}\n"))?;
+    for name in [setup_name.as_str(), zip_name.as_str(), "SHA256SUMS", "SHA256SUMS.sig"] {
         println!("dist: {}", out.join(name).display());
     }
     print!("{sums}");
+    Ok(())
+}
+
+/// Creates the release signing key (decision 0010), once, outside the repository.
+fn release_key() -> Result<()> {
+    let public = sign::generate()?;
+    let hex: String = public.iter().map(|b| format!("{b:02x}")).collect();
+    println!("release-key: private key written to {}", sign::key_path()?.display());
+    println!("release-key: keep a copy somewhere safe; without it, no update can be published.");
+    println!("release-key: put this public key in crates/volute-core/src/update.rs (RELEASE_KEY):");
+    println!("{hex}");
     Ok(())
 }
 
@@ -436,4 +454,114 @@ mod os {
     }
 
     pub fn end_session(_: &Child) {}
+}
+
+/// The release signing key (decision 0010): ECDSA P-256 through Windows' own BCrypt. The private
+/// key lives outside the repository, in `VOLUTE_SIGNING_KEY` or
+/// `%USERPROFILE%\.volute-release\signing-key.bin`.
+mod sign {
+    use std::path::{Path, PathBuf};
+
+    use anyhow::{Context, Result, bail};
+
+    pub fn key_path() -> Result<PathBuf> {
+        if let Some(path) = std::env::var_os("VOLUTE_SIGNING_KEY") {
+            return Ok(PathBuf::from(path));
+        }
+        let home = std::env::var_os("USERPROFILE").context("no USERPROFILE")?;
+        Ok(PathBuf::from(home).join(".volute-release").join("signing-key.bin"))
+    }
+
+    /// The public key built into Volute, read from volute-core's source.
+    fn built_in(root: &Path) -> Result<String> {
+        let source = std::fs::read_to_string(root.join("crates/volute-core/src/update.rs"))?;
+        source
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("pub const RELEASE_KEY: &str = \""))
+            .and_then(|rest| rest.strip_suffix("\";"))
+            .map(str::to_owned)
+            .context("no RELEASE_KEY in volute-core/src/update.rs")
+    }
+
+    #[cfg(windows)]
+    mod bcrypt {
+        pub use windows_sys::Win32::Security::Cryptography::{
+            BCRYPT_ECCPRIVATE_BLOB, BCRYPT_ECDSA_P256_ALG_HANDLE, BCRYPT_ECDSA_PRIVATE_P256_MAGIC, BCryptDestroyKey,
+            BCryptExportKey, BCryptFinalizeKeyPair, BCryptGenerateKeyPair, BCryptImportKeyPair, BCryptSignHash,
+        };
+    }
+
+    /// Makes a new key pair and saves the private blob; returns the public point (x then y).
+    #[cfg(windows)]
+    pub fn generate() -> Result<[u8; 64]> {
+        use bcrypt::*;
+        let path = key_path()?;
+        if path.exists() {
+            bail!("{} exists already: a new key would make every published release unverifiable", path.display());
+        }
+        let mut key = std::ptr::null_mut();
+        let mut blob = [0u8; 8 + 96];
+        let mut len = 0u32;
+        // SAFETY: a key handle created, finalised, exported into a buffer of the size given and
+        // destroyed here.
+        unsafe {
+            if BCryptGenerateKeyPair(BCRYPT_ECDSA_P256_ALG_HANDLE, &mut key, 256, 0) != 0 || BCryptFinalizeKeyPair(key, 0) != 0 {
+                bail!("BCrypt could not make a P-256 key");
+            }
+            let status = BCryptExportKey(key, std::ptr::null_mut(), BCRYPT_ECCPRIVATE_BLOB, blob.as_mut_ptr(), blob.len() as u32, &mut len, 0);
+            BCryptDestroyKey(key);
+            if status != 0 || len as usize != blob.len() {
+                bail!("BCrypt could not export the key");
+            }
+        }
+        std::fs::create_dir_all(path.parent().context("key folder")?)?;
+        std::fs::write(&path, blob)?;
+        let mut public = [0u8; 64];
+        public.copy_from_slice(&blob[8..72]);
+        Ok(public)
+    }
+
+    /// Signs SHA-256(`data`) with the private key, after checking it is the one built into Volute.
+    #[cfg(windows)]
+    pub fn sign(root: &Path, data: &[u8]) -> Result<[u8; 64]> {
+        use bcrypt::*;
+        let path = key_path()?;
+        let blob = std::fs::read(&path).with_context(|| {
+            format!("no signing key at {} (cargo xtask release-key, or set VOLUTE_SIGNING_KEY)", path.display())
+        })?;
+        if blob.len() != 104 || blob[..4] != BCRYPT_ECDSA_PRIVATE_P256_MAGIC.to_le_bytes() {
+            bail!("{} is not a P-256 private key", path.display());
+        }
+        let public: String = blob[8..72].iter().map(|b| format!("{b:02x}")).collect();
+        if public != built_in(root)? {
+            bail!("the signing key does not match RELEASE_KEY in volute-core: Volute would refuse this release");
+        }
+        let hash = super::sha256(data)?;
+        let mut key = std::ptr::null_mut();
+        let mut signature = [0u8; 64];
+        let mut len = 0u32;
+        // SAFETY: a private blob of the size given; the key is destroyed after signing into a
+        // 64-byte buffer.
+        unsafe {
+            if BCryptImportKeyPair(BCRYPT_ECDSA_P256_ALG_HANDLE, std::ptr::null_mut(), BCRYPT_ECCPRIVATE_BLOB, &mut key, blob.as_ptr(), blob.len() as u32, 0) != 0 {
+                bail!("BCrypt could not read the signing key");
+            }
+            let status = BCryptSignHash(key, std::ptr::null(), hash.as_ptr(), 32, signature.as_mut_ptr(), 64, &mut len, 0);
+            BCryptDestroyKey(key);
+            if status != 0 || len != 64 {
+                bail!("BCrypt could not sign");
+            }
+        }
+        Ok(signature)
+    }
+
+    #[cfg(not(windows))]
+    pub fn generate() -> Result<[u8; 64]> {
+        bail!("the release key is made with Windows' BCrypt")
+    }
+
+    #[cfg(not(windows))]
+    pub fn sign(_: &Path, _: &[u8]) -> Result<[u8; 64]> {
+        bail!("releases are signed with Windows' BCrypt")
+    }
 }

@@ -1,7 +1,7 @@
 //! Command-line flags. Test flags reach a state directly, for screenshots, benchmarks and tests.
 
-pub const USAGE: &str = "usage: volute [--open] [--no-settings] [--no-tray] [--dark|--light] [--mock] [--flyout] \
-     [--tab=mixer|devices|settings|about] [--about] [--no-update-check] [--pretend-version=X.Y.Z] [--updated] [--offer-update=X.Y.Z]";
+pub const USAGE: &str = "usage: volute [--open] [--no-settings] [--no-tray] [--dark|--light] [--mock] [--flyout[=center]] \
+     [--tab=mixer|devices|settings|about] [--about] [--no-update-check] [--pretend-version=X.Y.Z] [--updated] [--offer-update=X.Y.Z] [--lang=en|fr]";
 
 /// The main window's views, as `AppWindow.tab` numbers them.
 pub const TAB_MIXER: i32 = 0;
@@ -24,6 +24,9 @@ pub struct Options {
     pub mock: bool,
     /// Opens the flyout at start, at the bottom right (screenshots).
     pub flyout: bool,
+    /// With `--flyout=center`: on the left of the screen, where it has room to grow (screenshots
+    /// at a scale set by `SLINT_SCALE_FACTOR`).
+    pub flyout_center: bool,
     /// The main window's view at start (`TAB_*`).
     pub tab: i32,
     /// Never looks for a new release in this run (decision 0005).
@@ -35,6 +38,8 @@ pub struct Options {
     pub updated: bool,
     /// Shows this version as available without asking GitHub (screenshots).
     pub offer_update: Option<String>,
+    /// The interface's language instead of the system's (screenshots).
+    pub lang: Option<String>,
 }
 
 impl Options {
@@ -62,11 +67,17 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--light" => options.dark = Some(false),
             "--mock" => options.mock = true,
             "--flyout" => options.flyout = true,
+            "--flyout=center" => {
+                options.flyout = true;
+                options.flyout_center = true;
+            }
             "--no-update-check" => options.no_update_check = true,
             "--updated" => options.updated = true,
             "--tab=mixer" => options.tab = TAB_MIXER,
             "--tab=devices" => options.tab = TAB_DEVICES,
             "--tab=settings" => options.tab = TAB_SETTINGS,
+            "--lang=en" => options.lang = Some("en".into()),
+            "--lang=fr" => options.lang = Some("fr".into()),
             "--tab=about" | "--about" => {
                 options.tab = TAB_ABOUT;
                 options.open = true;
@@ -122,6 +133,7 @@ mod tests {
         assert!(updated.updated);
         assert_eq!(updated.pretend_version.as_deref(), Some("0.0.1"));
         assert_eq!(parse_all(&["--offer-update=0.2.0"]).unwrap().offer_update.as_deref(), Some("0.2.0"));
+        assert_eq!(parse_all(&["--lang=en"]).unwrap().lang.as_deref(), Some("en"));
     }
 
     #[test]

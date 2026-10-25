@@ -5,6 +5,8 @@ members = ["crates/volute-audio", "crates/volute-core", "crates/volute-shell", "
 [workspace.package]
 version = "0.0.1"
 edition = "2024"
+# let-chains (`if let … && let …`) need 1.88.
+rust-version = "1.88"
 license = "MIT"
 authors = ["Evan Pluchart"]
 repository = "https://github.com/EvanPluchart/volute"

@@ -2,6 +2,7 @@
 name = "volute-shell"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "Volute's desktop integration: tray, single instance, settings file (decision 0004)"

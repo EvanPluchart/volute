@@ -3,14 +3,13 @@
 //! it in the flyout and in Settings and installs on demand.
 
 use std::cell::RefCell;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::Thread;
 use std::time::{Duration, Instant};
 
 use volute_core::update::{self, Version};
-use volute_shell::update::Install;
+use volute_shell::update::{Checked, Install};
 
 use crate::ui;
 
@@ -36,6 +35,7 @@ const MISMATCH: i32 = 3;
 const DOWNLOAD_FAILED: i32 = 4;
 const NOT_STARTED: i32 = 5;
 const TEST_RUN: i32 = 6;
+const NOT_SIGNED: i32 = 7;
 
 /// The first check, once the UI is up: an update shows when the user first opens Volute.
 pub const FIRST_CHECK: Duration = Duration::from_secs(3);
@@ -71,6 +71,8 @@ struct Shared {
 pub struct Updater {
     thread: Thread,
     shared: Arc<Shared>,
+    /// This version (or the one pretended): nothing older or equal is ever installed.
+    current: String,
     /// A test run downloads and checks, and never runs the installer.
     test_run: bool,
 }
@@ -112,14 +114,14 @@ pub fn start(enabled: bool, current: String, first: Duration, test_run: bool) ->
         asked: AtomicBool::new(false),
         busy: AtomicBool::new(false),
     });
-    let thread_shared = shared.clone();
+    let (thread_shared, thread_current) = (shared.clone(), current.clone());
     let thread = std::thread::Builder::new()
         .name("volute-update".into())
-        .spawn(move || run(&thread_shared, &current, first))
+        .spawn(move || run(&thread_shared, &thread_current, first))
         .ok()?
         .thread()
         .clone();
-    Some(Updater { thread, shared, test_run })
+    Some(Updater { thread, shared, current, test_run })
 }
 
 fn run(shared: &Shared, current: &str, first: Duration) {
@@ -200,7 +202,8 @@ impl Updater {
 
     /// "Update", on the UI thread: installs the version offered, or opens its release page.
     pub fn update(&self, view: &View) {
-        let Some(version) = Version::parse(&view.version) else {
+        // Only ever forwards, whatever the view says (`--offer-update` can name any version).
+        let Some(version) = Version::parse(&view.version).and_then(|v| update::newer(&self.current, v)) else {
             return;
         };
         match view.mode {
@@ -235,45 +238,48 @@ fn fail((kind, detail): Failure) {
     });
 }
 
-/// Downloads the installer of `version` into a new folder and checks it against the release's
-/// `SHA256SUMS`. A missing checksum refuses the update.
-fn fetch(version: Version) -> Result<PathBuf, Failure> {
+/// Downloads the installer of `version` into a new folder and checks it: `SHA256SUMS` must be
+/// signed by the release key (decision 0010), and the installer must match its line there. The
+/// installer is returned held open, so it cannot change before it runs.
+fn fetch(version: Version) -> Result<Checked, Failure> {
     let name = version.setup_name();
-    let sums = volute_shell::update::text(&version.download_url("SHA256SUMS")).map_err(|e| (NO_CHECKSUM, e))?;
+    let sums = volute_shell::update::text(&version.download_url(update::SUMS)).map_err(|e| (NO_CHECKSUM, e))?;
+    let signature = volute_shell::update::text(&version.download_url(update::SUMS_SIGNATURE))
+        .ok()
+        .and_then(|text| update::parse_signature(&text))
+        .ok_or_else(|| (NOT_SIGNED, update::SUMS_SIGNATURE.to_owned()))?;
+    if !volute_shell::update::verify_signature(&update::release_key(), sums.as_bytes(), &signature) {
+        return Err((NOT_SIGNED, update::SUMS.to_owned()));
+    }
     let expected = update::checksum_for(&sums, &name).ok_or_else(|| (NO_CHECKSUM, name.clone()))?;
-    let folder = volute_shell::update::fresh_folder()
-        .ok_or_else(|| (DOWNLOAD_FAILED, std::env::temp_dir().display().to_string()))?;
+    let folder = volute_shell::update::fresh_folder().ok_or_else(|| (DOWNLOAD_FAILED, String::new()))?;
     let path = folder.join(&name);
     let checked = volute_shell::update::download(&version.download_url(&name), &path)
         .map_err(|e| (DOWNLOAD_FAILED, e))
-        .and_then(|()| {
-            (volute_shell::update::sha256_file(&path) == Some(expected))
-                .then_some(())
-                .ok_or((MISMATCH, String::new()))
-        });
-    if let Err(failure) = checked {
+        .and_then(|()| volute_shell::update::open_checked(&path, expected).ok_or((MISMATCH, String::new())));
+    if checked.is_err() {
         let _ = std::fs::remove_dir_all(&folder);
-        return Err(failure);
     }
-    Ok(path)
+    checked
 }
 
 /// On the UI thread: runs the checked installer, then quits so it can replace Volute.
-fn install(result: Result<PathBuf, Failure>, test_run: bool) {
-    let path = match result {
-        Ok(path) => path,
+fn install(result: Result<Checked, Failure>, test_run: bool) {
+    let installer = match result {
+        Ok(installer) => installer,
         Err(failure) => return fail(failure),
     };
+    let shown = installer.path().display().to_string();
     if test_run {
-        return fail((TEST_RUN, path.display().to_string()));
+        return fail((TEST_RUN, shown));
     }
     ui::set_update(|view| view.state = INSTALLING);
     // The installer waits until no Volute holds the single instance.
     release_instance();
-    if volute_shell::update::start_installer(&path, &INSTALLER_ARGS) {
+    if volute_shell::update::start_installer(installer, &INSTALLER_ARGS) {
         let _ = slint::quit_event_loop();
     } else {
-        fail((NOT_STARTED, path.display().to_string()));
+        fail((NOT_STARTED, shown));
     }
 }
 
@@ -287,9 +293,26 @@ mod tests {
     fn a_published_release_downloads_and_checks() {
         let latest = volute_shell::update::redirect_of(update::LATEST_URL).expect("a release");
         let version = Version::from_release_url(&latest).expect("a version");
-        let path = fetch(version).expect("downloaded and checked");
+        let installer = fetch(version).expect("downloaded, signed and checked");
+        let path = installer.path().to_path_buf();
         assert!(path.ends_with(version.setup_name()));
+        drop(installer);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// What the updater will check, on the release built by `cargo xtask dist` before it is
+    /// published: `cargo test -p volute -- --ignored local_dist`.
+    #[test]
+    #[ignore = "needs cargo xtask dist first"]
+    fn local_dist_is_signed_and_matches() {
+        let dist = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../dist");
+        let sums = std::fs::read_to_string(dist.join(update::SUMS)).expect("SHA256SUMS");
+        let signature = update::parse_signature(&std::fs::read_to_string(dist.join(update::SUMS_SIGNATURE)).unwrap())
+            .expect("a signature");
+        assert!(volute_shell::update::verify_signature(&update::release_key(), sums.as_bytes(), &signature));
+        let version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+        let expected = update::checksum_for(&sums, &version.setup_name()).expect("the installer's line");
+        assert!(volute_shell::update::open_checked(&dist.join(version.setup_name()), expected).is_some());
     }
 
     #[test]

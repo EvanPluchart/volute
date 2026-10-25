@@ -366,10 +366,11 @@ pub fn show_main() {
         (ui.app.clone_strong(), first)
     });
     let Some((app, first)) = app else { return };
-    let _ = app.show();
+    // Sized before it first shows, so it opens at its size instead of growing on screen.
     if first {
         app.window().set_size(slint::LogicalSize::new(MAIN_SIZE.0, MAIN_SIZE.1));
     }
+    let _ = app.show();
     app.window().with_winit_window(|w| {
         w.set_minimized(false);
         w.focus_window();
@@ -485,9 +486,10 @@ fn place_flyout() {
     });
 }
 
-/// The rows changed while the flyout is open. Its height follows them, but a shown window that
-/// grows is not drawn past its old height (Slint 1.18's software renderer on Windows), so a
-/// flyout whose height must change is opened again, at once, where it was.
+/// The rows changed while the flyout is open. Its height follows them, but it grows downwards,
+/// past the bottom of the screen, before it can be moved up; Slint 1.18 redraws only what
+/// changed, so the part that was off screen stays blank. A flyout whose height must change is
+/// opened again instead, at once, where it was.
 fn refit_flyout() {
     let reopen = with_ui(|ui| {
         let flyout = ui.flyout.as_ref()?;

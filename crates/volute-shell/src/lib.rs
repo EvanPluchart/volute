@@ -285,15 +285,58 @@ pub mod update {
         }
     }
 
-    /// The SHA-256 of a file.
-    pub fn sha256_file(path: &Path) -> Option<[u8; 32]> {
+    /// The SHA-256 of `data`.
+    pub fn sha256(data: &[u8]) -> Option<[u8; 32]> {
         #[cfg(windows)]
-        return crate::update_windows::sha256_file(path);
+        return crate::update_windows::sha256(data);
         #[cfg(not(windows))]
         {
-            let _ = path;
+            let _ = data;
             None
         }
+    }
+
+    /// Whether `signature` is the release key's ECDSA P-256 signature of `data` (`public`:
+    /// the key's point, x then y; `signature`: r then s).
+    pub fn verify_signature(public: &[u8; 64], data: &[u8], signature: &[u8; 64]) -> bool {
+        #[cfg(windows)]
+        return sha256(data).is_some_and(|hash| crate::update_windows::verify_p256(public, &hash, signature));
+        #[cfg(not(windows))]
+        {
+            let _ = (public, data, signature);
+            false
+        }
+    }
+
+    /// A downloaded installer whose checksum matched, held open so that nothing can replace it
+    /// before it runs: others may read it, never write or delete it.
+    #[derive(Debug)]
+    pub struct Checked {
+        path: PathBuf,
+        _held: std::fs::File,
+    }
+
+    impl Checked {
+        pub fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    /// Opens `path` so that nobody else can change it, and checks its SHA-256 from that handle.
+    pub fn open_checked(path: &Path, expected: [u8; 32]) -> Option<Checked> {
+        use std::io::Read;
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // FILE_SHARE_READ only.
+            options.share_mode(1);
+        }
+        let mut file = options.open(path).ok()?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).ok()?;
+        (sha256(&data)? == expected).then(|| Checked { path: path.to_path_buf(), _held: file })
     }
 
     /// This process runs with administrator rights: it must never run a downloaded file.
@@ -312,21 +355,42 @@ pub mod update {
         Install::Portable
     }
 
-    /// A new, empty folder for one download, under the temporary folder.
+    /// Where downloads go: `%LOCALAPPDATA%\Volute\Updates`, which only this user can write to,
+    /// unlike a `TEMP` pointed at a shared folder.
+    fn downloads() -> Option<PathBuf> {
+        let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).filter(|p| p.is_absolute())?;
+        Some(base.join("Volute").join("Updates"))
+    }
+
+    /// A new, empty folder for one download.
     pub fn fresh_folder() -> Option<PathBuf> {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .ok()?
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("volute-update-{}-{stamp}", std::process::id()));
+        let base = downloads()?;
+        std::fs::create_dir_all(&base).ok()?;
+        let dir = base.join(format!("{}-{stamp}", std::process::id()));
         // `create_dir` fails if it exists: the folder is ours alone.
         std::fs::create_dir(&dir).ok()?;
         Some(dir)
     }
 
-    /// Starts the installer at `path` with `args`, detached, by its full path; this process
-    /// should then quit.
-    pub fn start_installer(path: &Path, args: &[&str]) -> bool {
+    /// Removes the downloads of earlier updates: the installer that ran from there is done.
+    pub fn clean_downloads() {
+        if let Some(base) = downloads()
+            && let Ok(entries) = std::fs::read_dir(&base)
+        {
+            for entry in entries.flatten() {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+
+    /// Starts the checked installer with `args`, detached, by its full path; this process should
+    /// then quit. The file stays held until the installer has started.
+    pub fn start_installer(installer: Checked, args: &[&str]) -> bool {
+        let path = installer.path();
         path.is_absolute() && std::process::Command::new(path).args(args).spawn().is_ok()
     }
 }
@@ -338,6 +402,17 @@ pub struct Rect {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+}
+
+/// The work area (the screen minus the taskbar) of the monitor holding (`x`, `y`).
+pub fn work_area_at(x: i32, y: i32) -> Option<Rect> {
+    #[cfg(windows)]
+    return tray_windows::work_area(x, y);
+    #[cfg(not(windows))]
+    {
+        let _ = (x, y);
+        None
+    }
 }
 
 /// Where to put a `width` × `height` window opened from the tray at screen point (`x`, `y`):

@@ -60,6 +60,8 @@ struct Shared {
     muted: bool,
     /// A notification to show (title, body), taken by the tray thread.
     notification: Option<(String, String)>,
+    /// Volute is removing its icon: `WM_SHUTDOWN` from anyone else (a broadcast) is ignored.
+    closing: bool,
 }
 
 /// Lives on the tray thread, pointed to by the window's user data.
@@ -104,6 +106,7 @@ impl Tray {
             shown: false,
             muted: false,
             notification: None,
+            closing: false,
         }));
         let (ready_tx, ready_rx) = std::sync::mpsc::channel::<isize>();
         let thread_shared = shared.clone();
@@ -160,6 +163,9 @@ impl Tray {
 
 impl Drop for Tray {
     fn drop(&mut self) {
+        if let Ok(mut shared) = self.shared.lock() {
+            shared.closing = true;
+        }
         self.post(WM_SHUTDOWN);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -351,7 +357,9 @@ unsafe extern "system" fn window_proc(
             // SAFETY: default handling, which also lets the system free the input.
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
-        WM_SHUTDOWN => {
+        // Only Volute's own request: the message number is not secret, and a broadcast of it
+        // must not leave Volute running without its icon.
+        WM_SHUTDOWN if state.shared.lock().is_ok_and(|s| s.closing) => {
             listen(hwnd, state, false);
             if let Ok(mut shared) = state.shared.lock() {
                 shared.shown = false;

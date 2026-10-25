@@ -3,6 +3,25 @@
 
 use std::fmt;
 
+/// The public half of the release signing key (decision 0010): ECDSA P-256, the point's x then
+/// y, in hex. `SHA256SUMS.sig` must be its signature of `SHA256SUMS`, or no checksum in it is
+/// trusted. `cargo xtask dist` refuses to sign with any other key.
+pub const RELEASE_KEY: &str = "13565c39884c1e6186963a46e01b05a9184e6a95e2ded28643083a034f58c69d41d9f936931a0d160ba44756c83ce127c80833a86c46057e308f03c1f0b6df9b";
+
+/// The release's checksums, and their signature.
+pub const SUMS: &str = "SHA256SUMS";
+pub const SUMS_SIGNATURE: &str = "SHA256SUMS.sig";
+
+/// `RELEASE_KEY` as bytes.
+pub fn release_key() -> [u8; 64] {
+    parse_hex(RELEASE_KEY).expect("RELEASE_KEY is 128 hex digits")
+}
+
+/// The signature in `SHA256SUMS.sig`: 128 hex digits (r then s), then an optional line end.
+pub fn parse_signature(text: &str) -> Option<[u8; 64]> {
+    parse_hex(text.trim())
+}
+
 /// Where GitHub redirects to the newest published release.
 pub const LATEST_URL: &str = "https://github.com/EvanPluchart/volute/releases/latest";
 /// The release page of `version`, for a copy that cannot install itself.
@@ -78,11 +97,12 @@ pub fn checksum_for(sums: &str, file: &str) -> Option<[u8; 32]> {
     })
 }
 
-fn parse_hex(hex: &str) -> Option<[u8; 32]> {
-    if hex.len() != 64 {
+/// `N` bytes from exactly `2 * N` hex digits (no sign, no prefix).
+fn parse_hex<const N: usize>(hex: &str) -> Option<[u8; N]> {
+    if hex.len() != N * 2 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    let mut out = [0u8; 32];
+    let mut out = [0u8; N];
     for (i, byte) in out.iter_mut().enumerate() {
         *byte = u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok()?;
     }
@@ -140,6 +160,15 @@ mod tests {
             v("0.1.2").download_url("SHA256SUMS"),
             "https://github.com/EvanPluchart/volute/releases/download/v0.1.2/SHA256SUMS"
         );
+    }
+
+    #[test]
+    fn signatures_and_the_key_are_hex() {
+        assert_eq!(release_key().len(), 64);
+        let sig = "ab".repeat(64);
+        assert_eq!(parse_signature(&format!("{sig}\r\n")), Some([0xab; 64]));
+        assert_eq!(parse_signature(&sig[..126]), None);
+        assert_eq!(parse_signature(&format!("+{}", &sig[1..])), None);
     }
 
     #[test]

@@ -15,7 +15,10 @@ use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, LPARAM, LRESULT, WPARAM,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::System::Threading::CreateMutexW;
+use windows_sys::Win32::System::Threading::{
+    CreateMutexW, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    QueryFullProcessImageNameW,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, CreateWindowExW, DefWindowProcW, DispatchMessageW, FindWindowW,
     GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, GetWindowThreadProcessId, HWND_MESSAGE, MSG,
@@ -100,6 +103,23 @@ pub(crate) fn acquire(names: Names, on_show: Callback) -> Option<Instance> {
     Some(Instance { _mutex: mutex })
 }
 
+/// Whether process `pid` runs this very executable (limited query rights, nothing else).
+fn same_program(pid: u32) -> bool {
+    let Ok(here) = std::env::current_exe() else { return false };
+    // SAFETY: a query-only handle, closed below; the buffer and its length match.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return false;
+        }
+        let mut buffer = [0u16; 1024];
+        let mut len = buffer.len() as u32;
+        let ok = QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buffer.as_mut_ptr(), &mut len) != 0;
+        CloseHandle(process);
+        ok && String::from_utf16_lossy(&buffer[..len as usize]).eq_ignore_ascii_case(&here.to_string_lossy())
+    }
+}
+
 /// Asks the running instance to show its window, lets it come to the front, and waits for its
 /// answer. `false`: it did not answer in time.
 fn signal_running(names: Names) -> bool {
@@ -116,9 +136,13 @@ fn signal_running(names: Names) -> bool {
         if hwnd.is_null() {
             return false;
         }
-        // Only that process may take the foreground, not any.
+        // Only that process may take the foreground, not any, and only if it is this same
+        // program: another one could hold the names to swallow every launch.
         let mut owner = 0u32;
         GetWindowThreadProcessId(hwnd, &mut owner);
+        if !same_program(owner) {
+            return false;
+        }
         AllowSetForegroundWindow(owner);
         let left = deadline.saturating_duration_since(Instant::now());
         let wait = u32::try_from(left.as_millis())
@@ -233,5 +257,14 @@ mod tests {
             "no answer: this launch runs"
         );
         assert!(started.elapsed() < Duration::from_secs(4), "within the wait");
+    }
+
+    /// Only a process running this executable is signalled and handed the foreground.
+    #[test]
+    fn only_the_same_program_is_trusted() {
+        assert!(same_program(std::process::id()));
+        // The System process: another image, and out of reach anyway.
+        assert!(!same_program(4));
+        assert!(!same_program(0));
     }
 }
