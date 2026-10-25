@@ -143,7 +143,8 @@ pub fn install(app: &AppWindow, setup: Setup) {
                 settings: text.invoke_settings().into(),
                 quit: text.invoke_quit().into(),
             };
-            Tray::new("Volute", menu, |event| {
+            // Next to the clock the first time (decision 0012), never for a test run's icon.
+            Tray::new("Volute", menu, !test_run, |event| {
                 let _ = slint::invoke_from_event_loop(move || on_tray_event(event));
             })
         })
@@ -418,12 +419,17 @@ pub fn toggle_flyout(x: i32, y: i32) {
     }
 }
 
-/// A second launch of Volute asks for it: the flyout, at the bottom right as a tray click would
-/// open it, unless it is open already.
+/// A launch of Volute by hand asks for it: the flyout, from the tray icon as a click on it would
+/// open it (on the screen with the taskbar's clock), unless it is open already.
 pub fn show_flyout_for_launch() {
-    if with_ui(|ui| ui.flyout.is_none()).unwrap_or(false) {
-        open_flyout(i32::MAX / 2, i32::MAX / 2);
-    }
+    let open = with_ui(|ui| ui.flyout.is_none().then(|| ui.tray.as_ref().and_then(Tray::rect)));
+    let Some(icon) = open.flatten() else { return };
+    let (x, y) = match icon {
+        Some(r) => (r.x + r.width / 2, r.y + r.height / 2),
+        // No icon: the bottom right of the main screen.
+        None => volute_shell::work_area_at(0, 0).map_or((0, 0), |a| (a.x + a.width - 1, a.y + a.height - 1)),
+    };
+    open_flyout(x, y);
 }
 
 /// Opens the flyout as a click on the tray at (`x`, `y`) would.
@@ -469,6 +475,15 @@ pub fn open_flyout(x: i32, y: i32) {
         w.set_skip_taskbar(true);
         w.set_corner_preference(CornerPreference::Round);
         w.focus_window();
+    });
+    // The window only appears on the next turn of the event loop, and appearing gives it a
+    // taskbar button again: it is taken off once the flyout is on screen.
+    slint::Timer::single_shot(Duration::from_millis(50), move || {
+        with_ui(|ui| {
+            if let Some(flyout) = ui.flyout.as_ref().filter(|_| ui.flyout_gen == generation) {
+                flyout.window().with_winit_window(|w| w.set_skip_taskbar(true));
+            }
+        });
     });
     with_ui(|ui| ui.flyout = Some(flyout));
     place_flyout();

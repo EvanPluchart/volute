@@ -109,6 +109,7 @@ fn main() -> anyhow::Result<()> {
     if !test_run {
         // The installer of an earlier update has run: its download can go.
         volute_shell::update::clean_downloads();
+        volute_shell::startup::add_flag_if_missing();
     }
     if options.may_check_updates() {
         let current = options.pretend_version.clone().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned());
@@ -162,6 +163,10 @@ fn main() -> anyhow::Result<()> {
     // icon on screen, the window shows.
     if options.open || !ui::in_tray() {
         ui::show_main();
+    } else if !test_run && !options.startup && !options.updated && !options.flyout {
+        // Launched by hand (Start menu, desktop): something shows, the flyout, as a launch
+        // shows it while Volute runs. Only Windows' start at sign-in waits behind the icon.
+        slint::Timer::single_shot(Duration::from_millis(300), ui::show_flyout_for_launch);
     }
     if options.flyout {
         // As a click at the far bottom right would: placement keeps it inside the work area. Or

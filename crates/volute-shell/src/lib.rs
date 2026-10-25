@@ -136,19 +136,22 @@ pub struct Tray {
 
 impl Tray {
     /// Adds the icon, with `tooltip`. `on_event` runs on the tray's own thread. `None` where the
-    /// system has no tray Volute supports.
+    /// system has no tray Volute supports. With `promote`, the icon goes next to the clock the
+    /// first time this program shows one, instead of among the hidden icons (decision 0012):
+    /// never in a test run.
     pub fn new(
         tooltip: &str,
         menu: TrayMenu,
+        promote: bool,
         on_event: impl Fn(TrayEvent) + Send + Sync + 'static,
     ) -> Option<Tray> {
         #[cfg(windows)]
         {
-            tray_windows::Tray::new(tooltip, menu, Arc::new(on_event)).map(|inner| Tray { inner })
+            tray_windows::Tray::new(tooltip, menu, promote, Arc::new(on_event)).map(|inner| Tray { inner })
         }
         #[cfg(not(windows))]
         {
-            let _ = (tooltip, menu, on_event);
+            let _ = (tooltip, menu, promote, on_event);
             None
         }
     }
@@ -159,6 +162,15 @@ impl Tray {
         return self.inner.is_shown();
         #[cfg(not(windows))]
         false
+    }
+
+    /// Where the icon is on screen (physical pixels); the button that shows the hidden icons
+    /// when it is among them.
+    pub fn rect(&self) -> Option<Rect> {
+        #[cfg(windows)]
+        return self.inner.rect();
+        #[cfg(not(windows))]
+        None
     }
 
     /// Updates the hover text (truncated to what the system shows).
@@ -206,11 +218,23 @@ pub mod startup {
         {
             let Ok(exe) = std::env::current_exe() else { return false };
             crate::startup_windows::command().is_some_and(|command| {
-                command.trim().trim_matches('"').eq_ignore_ascii_case(&exe.to_string_lossy())
+                crate::startup_windows::program(&command).eq_ignore_ascii_case(&exe.to_string_lossy())
             })
         }
         #[cfg(not(windows))]
         false
+    }
+
+    /// A start at sign-in written before `--startup` existed (M1's installer) would open the
+    /// flyout at every sign-in: it gets the flag. Nothing changes when it is off.
+    pub fn add_flag_if_missing() {
+        #[cfg(windows)]
+        if enabled()
+            && crate::startup_windows::command()
+                .is_some_and(|command| !command.trim_end().ends_with(crate::startup_windows::STARTUP_FLAG))
+        {
+            set(true);
+        }
     }
 
     /// Starts this executable at sign-in, or stops starting Volute. `false` if the change failed.

@@ -71,7 +71,7 @@ Name: "{userdesktop}\Volute"; Filename: "{app}\volute.exe"; Tasks: desktopicon
 [Registry]
 ; Only the value this installer creates (Settings in Volute changes the same one); removed on
 ; uninstall. Never written by an update from the app: Settings decides from then on.
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Volute"; ValueData: """{app}\volute.exe"""; Flags: uninsdeletevalue; Tasks: startup; Check: not RelaunchAsked
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Volute"; ValueData: """{app}\volute.exe"" --startup";Flags: uninsdeletevalue; Tasks: startup; Check: not RelaunchAsked
 
 [Run]
 Filename: "{app}\volute.exe"; Parameters: "--open"; Description: "{cm:LaunchVolute}"; Flags: nowait postinstall skipifsilent

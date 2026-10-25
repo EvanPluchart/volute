@@ -37,13 +37,30 @@ pub(crate) fn command() -> Option<String> {
     Some(String::from_utf16_lossy(units.split(|&u| u == 0).next().unwrap_or(units)))
 }
 
+/// The flag Windows starts Volute with at sign-in: it then waits behind its tray icon instead of
+/// opening the flyout, as a launch by hand does.
+pub(crate) const STARTUP_FLAG: &str = "--startup";
+
+/// The program a `Run` command starts: `"C:\Programs\Volute\volute.exe" --startup` gives the
+/// path.
+pub(crate) fn program(command: &str) -> &str {
+    let command = command.trim();
+    match command.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or(rest),
+        None => command
+            .strip_suffix(STARTUP_FLAG)
+            .unwrap_or(command)
+            .trim_end(),
+    }
+}
+
 /// Starts `exe` at sign-in, or stops starting Volute.
 pub(crate) fn set(exe: Option<&std::path::Path>) -> bool {
     let (key, value) = (wide(RUN), wide(VALUE));
     match exe {
         Some(exe) => {
             // Quoted, as the installer writes it: a path with spaces stays one program.
-            let data = wide(&format!("\"{}\"", exe.display()));
+            let data = wide(&format!("\"{}\" {STARTUP_FLAG}", exe.display()));
             // SAFETY: NUL-terminated names and data, its size in bytes with the NUL.
             unsafe {
                 RegSetKeyValueW(
@@ -61,5 +78,23 @@ pub(crate) fn set(exe: Option<&std::path::Path>) -> bool {
             let code = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), value.as_ptr()) };
             code == ERROR_SUCCESS || code == ERROR_FILE_NOT_FOUND
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_program_out_of_a_command() {
+        let path = r"C:\Users\A B\AppData\Local\Programs\Volute\volute.exe";
+        assert_eq!(program(&format!("\"{path}\" {STARTUP_FLAG}")), path);
+        // As M1's installer wrote it, and unquoted.
+        assert_eq!(program(&format!("\"{path}\"")), path);
+        assert_eq!(
+            program(r"C:\Volute\volute.exe --startup"),
+            r"C:\Volute\volute.exe"
+        );
+        assert_eq!(program(r"C:\Volute\volute.exe"), r"C:\Volute\volute.exe");
     }
 }

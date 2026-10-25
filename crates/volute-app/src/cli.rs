@@ -1,7 +1,7 @@
 //! Command-line flags. Test flags reach a state directly, for screenshots, benchmarks and tests.
 
 pub const USAGE: &str = "usage: volute [--open] [--no-settings] [--no-tray] [--dark|--light] [--mock] [--flyout[=center]] \
-     [--tab=mixer|devices|settings|about] [--about] [--no-update-check] [--pretend-version=X.Y.Z] [--updated] [--offer-update=X.Y.Z] [--lang=en|fr] [--close-to-tray]";
+     [--tab=mixer|devices|settings|about] [--about] [--no-update-check] [--pretend-version=X.Y.Z] [--updated] [--offer-update=X.Y.Z] [--lang=en|fr] [--close-to-tray] [--startup]";
 
 /// The main window's views, as `AppWindow.tab` numbers them.
 pub const TAB_MIXER: i32 = 0;
@@ -42,6 +42,9 @@ pub struct Options {
     pub lang: Option<String>,
     /// Keeps running when the main window closes, for this session (tests of decision 0009).
     pub close_to_tray: bool,
+    /// Started by Windows at sign-in: waits behind the tray icon. A launch by hand opens the
+    /// flyout instead, so it always shows something.
+    pub startup: bool,
 }
 
 impl Options {
@@ -76,6 +79,7 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--no-update-check" => options.no_update_check = true,
             "--updated" => options.updated = true,
             "--close-to-tray" => options.close_to_tray = true,
+            "--startup" => options.startup = true,
             "--tab=mixer" => options.tab = TAB_MIXER,
             "--tab=devices" => options.tab = TAB_DEVICES,
             "--tab=settings" => options.tab = TAB_SETTINGS,
@@ -137,6 +141,7 @@ mod tests {
         assert_eq!(updated.pretend_version.as_deref(), Some("0.0.1"));
         assert_eq!(parse_all(&["--offer-update=0.2.0"]).unwrap().offer_update.as_deref(), Some("0.2.0"));
         assert_eq!(parse_all(&["--lang=en"]).unwrap().lang.as_deref(), Some("en"));
+        assert!(parse_all(&["--startup"]).unwrap().startup);
     }
 
     #[test]

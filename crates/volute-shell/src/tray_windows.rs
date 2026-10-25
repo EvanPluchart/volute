@@ -12,7 +12,11 @@ use windows_sys::Win32::UI::Input::{
     GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER, RID_INPUT,
     RIDEV_INPUTSINK, RIDEV_REMOVE, RIM_TYPEMOUSE, RegisterRawInputDevices,
 };
-use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows_sys::Win32::System::LibraryLoader::{GetModuleFileNameW, GetModuleHandleW};
+use windows_sys::Win32::System::Registry::{
+    HKEY, HKEY_CURRENT_USER, KEY_READ, REG_DWORD, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegCloseKey,
+    RegEnumKeyExW, RegGetValueW, RegOpenKeyExW, RegSetKeyValueW,
+};
 use windows_sys::Win32::UI::HiDpi::{GetDpiForSystem, GetSystemMetricsForDpi};
 use windows_sys::Win32::UI::Shell::{
     NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIIF_LARGE_ICON, NIIF_USER, NIM_ADD,
@@ -21,12 +25,12 @@ use windows_sys::Win32::UI::Shell::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu,
-    DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, HICON,
+    DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, HICON, KillTimer,
     IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTCOLOR, LoadIconW, LoadImageW, MF_CHECKED, MF_SEPARATOR, MF_STRING,
     MSG, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SM_CXICON, SM_CXSMICON,
-    SetForegroundWindow, SetWindowLongPtrW, TPM_BOTTOMALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    SetForegroundWindow, SetTimer, SetWindowLongPtrW, TPM_BOTTOMALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
     TrackPopupMenu, TranslateMessage, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
-    WM_ENDSESSION, WM_INPUT, WM_LBUTTONDBLCLK, WM_MOUSEMOVE, WM_NULL, WNDCLASSW, WS_OVERLAPPED,
+    WM_ENDSESSION, WM_INPUT, WM_LBUTTONDBLCLK, WM_MOUSEMOVE, WM_NULL, WM_TIMER, WNDCLASSW, WS_OVERLAPPED,
     GetCursorPos, RI_MOUSE_WHEEL,
 };
 
@@ -47,6 +51,12 @@ const MENU_OPEN: usize = 1;
 const MENU_QUIT: usize = 2;
 const MENU_MUTE: usize = 3;
 const MENU_SETTINGS: usize = 4;
+/// The timer that looks for Windows' record of the icon, to show it next to the clock once.
+const PROMOTE_TIMER: usize = 1;
+/// How often, and how many times, the record is looked for: Explorer writes it after the icon
+/// is added.
+const PROMOTE_EVERY_MS: u32 = 1500;
+const PROMOTE_TRIES: u8 = 5;
 
 type Callback = Arc<dyn Fn(TrayEvent) + Send + Sync>;
 
@@ -78,6 +88,8 @@ struct State {
     listening: Cell<bool>,
     /// Where the icon was, last time the pointer moved over it.
     rect: Cell<RECT>,
+    /// Looks left for Windows' record of the icon, to promote it (0: not looking).
+    promote_tries: Cell<u8>,
 }
 
 pub(crate) struct Tray {
@@ -99,7 +111,7 @@ fn wide(text: &str) -> Vec<u16> {
 }
 
 impl Tray {
-    pub(crate) fn new(tooltip: &str, menu: TrayMenu, callback: Callback) -> Option<Tray> {
+    pub(crate) fn new(tooltip: &str, menu: TrayMenu, promote: bool, callback: Callback) -> Option<Tray> {
         let shared = Arc::new(Mutex::new(Shared {
             tooltip: tooltip.to_owned(),
             menu,
@@ -112,7 +124,7 @@ impl Tray {
         let thread_shared = shared.clone();
         let thread = std::thread::Builder::new()
             .name("volute-tray".into())
-            .spawn(move || run(thread_shared, callback, ready_tx))
+            .spawn(move || run(thread_shared, callback, promote, ready_tx))
             .ok()?;
         let hwnd = ready_rx.recv().ok().filter(|&h| h != 0)?;
         Some(Tray {
@@ -153,6 +165,23 @@ impl Tray {
             shared.notification = Some((title.to_owned(), body.to_owned()));
         }
         self.post(WM_NOTIFY_USER);
+    }
+
+    pub(crate) fn rect(&self) -> Option<crate::Rect> {
+        let id = NOTIFYICONIDENTIFIER {
+            cbSize: std::mem::size_of::<NOTIFYICONIDENTIFIER>() as u32,
+            hWnd: self.hwnd as HWND,
+            uID: ICON_ID,
+            ..NOTIFYICONIDENTIFIER::default()
+        };
+        let mut rect = RECT::default();
+        // SAFETY: a sized identifier of our own icon, and a rectangle to fill.
+        (unsafe { Shell_NotifyIconGetRect(&id, &mut rect) } == 0).then(|| crate::Rect {
+            x: rect.left,
+            y: rect.top,
+            width: rect.right - rect.left,
+            height: rect.bottom - rect.top,
+        })
     }
 
     /// Whether the icon is on screen: hiding Volute behind a missing icon would lose it.
@@ -228,7 +257,7 @@ fn add_icon(hwnd: HWND, state: &State) {
     }
 }
 
-fn run(shared: Arc<Mutex<Shared>>, callback: Callback, ready: std::sync::mpsc::Sender<isize>) {
+fn run(shared: Arc<Mutex<Shared>>, callback: Callback, promote: bool, ready: std::sync::mpsc::Sender<isize>) {
     let class = wide("VoluteTrayWindow");
     // SAFETY: registering a class with a static window procedure; failing again (already
     // registered by an earlier tray in this process) is fine.
@@ -271,10 +300,16 @@ fn run(shared: Arc<Mutex<Shared>>, callback: Callback, ready: std::sync::mpsc::S
         balloon_icon: load_icon(SM_CXICON, ICON_RESOURCE),
         listening: Cell::new(false),
         rect: Cell::new(RECT::default()),
+        promote_tries: Cell::new(if promote { PROMOTE_TRIES } else { 0 }),
         // SAFETY: a NUL-terminated name.
         taskbar_created: unsafe { RegisterWindowMessageW(taskbar.as_ptr()) },
     });
+    let first_run = promote && promote_before_adding();
     add_icon(hwnd, &state);
+    if first_run {
+        // SAFETY: a timer on our own window, killed in WM_TIMER.
+        unsafe { SetTimer(hwnd, PROMOTE_TIMER, PROMOTE_EVERY_MS, None) };
+    }
     let state = Box::into_raw(state);
     // SAFETY: the window proc reads this pointer until WM_DESTROY, on this thread only.
     unsafe { SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize) };
@@ -345,6 +380,10 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
+        WM_TIMER if wparam == PROMOTE_TIMER => {
+            promote_once(hwnd, state);
+            0
+        }
         // Someone else's request to close this hidden window: Volute decides when its icon goes.
         WM_CLOSE => 0,
         // Windows is signing out, or an installer asks Volute to close (Restart Manager).
@@ -384,6 +423,173 @@ unsafe extern "system" fn window_proc(
         }
         // SAFETY: default handling.
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+/// Windows 11 puts a new icon among the hidden ones, where a mixer is lost: Volute's goes next
+/// to the clock, as "Other system tray icons" in the taskbar settings would put it. Once Windows
+/// has a choice recorded (the user's, or this one), it is never touched again (decision 0012).
+/// The record is Explorer's, per program, written when the program first adds an icon and read
+/// when a process adds one, so the first run records the choice for the runs after it, and
+/// those make it before adding the icon. Whether the timer is needed for the first run.
+fn promote_before_adding() -> bool {
+    match icon_record() {
+        Some((key, false)) => {
+            set_promoted(&key);
+            false
+        }
+        Some((_, true)) => false,
+        None => true,
+    }
+}
+
+/// The first run: Explorer has written its record since the icon was added; the choice is
+/// recorded there for the next runs.
+fn promote_once(hwnd: HWND, state: &State) {
+    let tries = state.promote_tries.get().saturating_sub(1);
+    state.promote_tries.set(tries);
+    let done = match icon_record() {
+        Some((key, promoted)) => {
+            if !promoted {
+                set_promoted(&key);
+            }
+            true
+        }
+        None => tries == 0,
+    };
+    if done {
+        state.promote_tries.set(0);
+        // SAFETY: our own timer.
+        unsafe { KillTimer(hwnd, PROMOTE_TIMER) };
+    }
+}
+
+const ICON_SETTINGS: &str = r"Control Panel\NotifyIconSettings";
+
+/// Windows' record of this program's icon: its key under `ICON_SETTINGS`, and whether a
+/// choice is recorded in it (`IsPromoted` present, whatever its value).
+fn icon_record() -> Option<(String, bool)> {
+    let exe = current_exe()?;
+    let parent = wide(ICON_SETTINGS);
+    let mut root: HKEY = std::ptr::null_mut();
+    // SAFETY: a NUL-terminated path and a key handle to fill, closed below.
+    if unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, parent.as_ptr(), 0, KEY_READ, &mut root) } != 0 {
+        return None;
+    }
+    let mut found = None;
+    for index in 0.. {
+        let mut name = [0u16; 64];
+        let mut len = name.len() as u32;
+        // SAFETY: an open key, a buffer and its length in characters.
+        let code = unsafe {
+            RegEnumKeyExW(
+                root,
+                index,
+                name.as_mut_ptr(),
+                &mut len,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        if code != 0 {
+            break;
+        }
+        let name = String::from_utf16_lossy(&name[..len as usize]);
+        let key = format!(r"{ICON_SETTINGS}\{name}");
+        let ours = read_dword(&key, "UID") == Some(ICON_ID)
+            && read_string(&key, "ExecutablePath").is_some_and(|path| same_exe(&path, &exe));
+        if ours {
+            found = Some((key.clone(), read_dword(&key, "IsPromoted").is_some()));
+            break;
+        }
+    }
+    // SAFETY: the key opened above.
+    unsafe { RegCloseKey(root) };
+    found
+}
+
+/// Whether Explorer's `recorded` path names `exe`. Explorer writes a path under a known folder
+/// as the folder's GUID and the rest (`{GUID}\Volute\volute.exe`); the rest must then match.
+fn same_exe(recorded: &str, exe: &str) -> bool {
+    if recorded.eq_ignore_ascii_case(exe) {
+        return true;
+    }
+    recorded.starts_with('{')
+        && recorded.split_once('}').is_some_and(|(_, rest)| {
+            rest.len() > 1
+                && exe.len() > rest.len()
+                && exe[exe.len() - rest.len()..].eq_ignore_ascii_case(rest)
+        })
+}
+
+fn current_exe() -> Option<String> {
+    let mut path = [0u16; 1024];
+    // SAFETY: our own module's path into a buffer of the length given.
+    let len =
+        unsafe { GetModuleFileNameW(std::ptr::null_mut(), path.as_mut_ptr(), path.len() as u32) }
+            as usize;
+    (len > 0 && len < path.len()).then(|| String::from_utf16_lossy(&path[..len]))
+}
+
+fn read_dword(key: &str, value: &str) -> Option<u32> {
+    let (key, value) = (wide(key), wide(value));
+    let mut data = 0u32;
+    let mut len = 4u32;
+    // SAFETY: NUL-terminated names and a DWORD with its size.
+    let code = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&raw mut data).cast(),
+            &mut len,
+        )
+    };
+    (code == 0).then_some(data)
+}
+
+fn read_string(key: &str, value: &str) -> Option<String> {
+    let (key, value) = (wide(key), wide(value));
+    let mut data = [0u16; 1024];
+    let mut len = (data.len() * 2) as u32;
+    // SAFETY: NUL-terminated names; the buffer and its size in bytes match.
+    let code = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            data.as_mut_ptr().cast(),
+            &mut len,
+        )
+    };
+    if code != 0 {
+        return None;
+    }
+    let units = &data[..(len as usize / 2).min(data.len())];
+    Some(String::from_utf16_lossy(
+        units.split(|&u| u == 0).next().unwrap_or(units),
+    ))
+}
+
+fn set_promoted(key: &str) -> bool {
+    let (key, value) = (wide(key), wide("IsPromoted"));
+    let one = 1u32;
+    // SAFETY: NUL-terminated names and a DWORD with its size.
+    unsafe {
+        RegSetKeyValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            REG_DWORD,
+            (&raw const one).cast(),
+            4,
+        ) == 0
     }
 }
 
@@ -549,6 +755,7 @@ mod tests {
                 settings: "Settings".into(),
                 quit: "Quit".into(),
             },
+            false,
             Arc::new(|_| {}),
         ) else {
             panic!("no tray window");
@@ -556,5 +763,23 @@ mod tests {
         tray.set_tooltip("Volute test · 50 %");
         tray.set_muted(true);
         drop(tray);
+    }
+
+    #[test]
+    fn knows_its_own_icon_record() {
+        let exe = r"C:\Users\a\AppData\Local\Programs\Volute\volute.exe";
+        assert!(same_exe(exe, exe));
+        assert!(same_exe(&exe.to_uppercase(), exe));
+        // A known folder written as its GUID.
+        assert!(same_exe(
+            r"{6D809377-6AF0-444B-8957-A3773F02200E}\Volute\volute.exe",
+            r"C:\Program Files\Volute\volute.exe"
+        ));
+        assert!(!same_exe(
+            r"{6D809377-6AF0-444B-8957-A3773F02200E}\Other\volute.exe",
+            r"C:\Program Files\Volute\volute.exe"
+        ));
+        assert!(!same_exe(r"{6D809377-6AF0-444B-8957-A3773F02200E}", exe));
+        assert!(!same_exe(r"C:\Elsewhere\volute.exe", exe));
     }
 }
