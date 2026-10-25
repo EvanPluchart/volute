@@ -12,6 +12,8 @@ Scope: CPU, memory, latency and size after the redesign, the Settings and About 
 
 The mock is the worst case: every app, the master and the microphone move every frame. The real backend measured 1.8 % open in M1.
 
+**The open state varies a lot from run to run on this machine.** After the keyboard and security commits, two runs back to back gave 4.85 % then 1.90 % open (flyout 3.38 % then 2.78 %; idle 0.000 % both times). The first is over the 4 % budget. Nothing changed between them, so other programs on the machine are the likely cause, but one run cannot tell. Run the bench three times on an idle machine before the release, and look again if the median is over 3 %.
+
 * **Latency:** `set_volume` on a real session, 0.12 ms median (the owned-session test fails above 16 ms); the flyout is created and shown in about 1 ms.
 * **Size:** `volute.exe` 10.9 MB, the installer 6.4 MB, the portable zip 5.7 MB.
 
