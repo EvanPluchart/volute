@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Volute — the volume mixer for Windows</title>
+  <meta name="description" content="Every app's volume and every device, one click from the notification area. Native, light, free and open source, for Windows 10 and 11.">
+  <link rel="canonical" href="https://evanpluchart.github.io/volute/en/">
+  <link rel="alternate" hreflang="fr" href="https://evanpluchart.github.io/volute/">
+  <link rel="alternate" hreflang="en" href="https://evanpluchart.github.io/volute/en/">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="../favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <meta name="theme-color" content="#5B2BFF">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Volute — the volume mixer for Windows">
+  <meta property="og:description" content="Every app's volume and every device, one click from the notification area.">
+  <meta property="og:url" content="https://evanpluchart.github.io/volute/en/">
+  <meta property="og:image" content="https://evanpluchart.github.io/volute/assets/og-en.png">
+  <meta property="og:locale" content="en_GB">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preload" href="../assets/fonts/figtree.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="hero">
+    <div class="wrap top">
+      <a class="logo" href="./" aria-label="Volute, home"><img src="../assets/logo-reversed.svg" alt="Volute" width="146" height="34"></a>
+      <nav aria-label="Main navigation">
+        <a class="hide-small" href="#try">Try it</a>
+        <a class="hide-small" href="#cost">What it costs</a>
+        <a class="hide-small" href="https://github.com/EvanPluchart/volute">GitHub</a>
+        <a class="lang" href="../" hreflang="fr" lang="fr">Français</a>
+      </nav>
+    </div>
+    <div class="wrap hero-grid">
+      <div>
+        <h1>Every sound in its&nbsp;place.</h1>
+        <div class="meter" aria-hidden="true"><span></span></div>
+        <p class="lead">Volute is a volume mixer for Windows. Every app's volume and live level, every output and every microphone, one click from the notification area. The rest of the time, you forget it is there.</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/EvanPluchart/volute/releases/latest">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
+            Download for Windows
+          </a>
+          <a class="button ghost" href="https://github.com/EvanPluchart/volute">See the code</a>
+        </div>
+        <p class="fine">Windows 10 and 11 · free and open source (MIT) · no administrator rights</p>
+      </div>
+      <img class="shot" src="../assets/en/flyout-dark.png" width="720" height="862" alt="Volute's mixer opened from the notification area: the master output at the top, then one line per app with its icon, volume and level, then the microphone.">
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="try" id="try">
+      <div class="wrap try-grid">
+        <div>
+          <p class="eyebrow">Try it</p>
+          <h2>A fader, not a form.</h2>
+          <p class="intro">Each app has its line. The fader sets its volume, the amber level shows what it plays, live, and a click on its icon mutes it. System sounds stay apart, and an app that went quiet fades away after a minute.</p>
+          <p class="hint">Drag, or use the arrow keys. Click an icon to mute.</p>
+        </div>
+        <div class="desk" role="group" aria-label="Mixer demo">
+          <div class="strip">
+            <button class="mute" type="button" aria-pressed="false" aria-label="Mute Music" data-mute="Mute" data-unmute="Unmute">
+              <span class="icon" style="background:#1EA862"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5" fill="#fff"/><circle cx="16.5" cy="16" r="2.5" fill="#fff"/></svg></span>
+            </button>
+            <div class="name"><span>Music</span><output>72</output></div>
+            <div class="fader"><input type="range" min="0" max="100" step="2" value="72" aria-label="Music volume"><div class="track"><div class="fill"></div><div class="level"></div></div><div class="thumb"></div></div>
+          </div>
+          <div class="strip">
+            <button class="mute" type="button" aria-pressed="false" aria-label="Mute Call" data-mute="Mute" data-unmute="Unmute">
+              <span class="icon" style="background:#4F6BF5"><svg viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg></span>
+            </button>
+            <div class="name"><span>Call</span><output>56</output></div>
+            <div class="fader"><input type="range" min="0" max="100" step="2" value="56" aria-label="Call volume"><div class="track"><div class="fill"></div><div class="level"></div></div><div class="thumb"></div></div>
+          </div>
+          <div class="strip">
+            <button class="mute" type="button" aria-pressed="false" aria-label="Mute Game" data-mute="Mute" data-unmute="Unmute">
+              <span class="icon" style="background:#3A3F58"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2.5" y="7" width="19" height="11" rx="5.5" fill="#fff" stroke="none"/><path d="M7 10.5v4M5 12.5h4" stroke="#3A3F58"/><circle cx="15.5" cy="11.5" r="1" fill="#3A3F58" stroke="none"/><circle cx="17.5" cy="13.8" r="1" fill="#3A3F58" stroke="none"/></svg></span>
+            </button>
+            <div class="name"><span>Game</span><output>84</output></div>
+            <div class="fader"><input type="range" min="0" max="100" step="2" value="84" aria-label="Game volume"><div class="track"><div class="fill"></div><div class="level"></div></div><div class="thumb"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="wrap">
+        <p class="eyebrow">What Windows does not do</p>
+        <h2>The mixer Windows tucked away at the bottom of Settings.</h2>
+        <p class="intro">Windows' own is four clicks deep, shows no levels and forgets your apps. Volute lives in the notification area and gets to the point.</p>
+        <div class="feature-grid">
+          <article class="card">
+            <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#FFB020" stroke-width="2" stroke-linecap="round"><path d="M6 4v16M12 4v16M18 4v16M3.5 14h5M9.5 8h5M15.5 16h5"/></svg></div>
+            <h3>Every app, with its level</h3>
+            <p>Each app's real name and icon, its volume and what it plays, live. The processes of one app make one line.</p>
+          </article>
+          <article class="card">
+            <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#FFB020" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></div>
+            <h3>Switch outputs in one click</h3>
+            <p>Headphones, speakers, monitor: pick the output at the top of the mixer, and Volute makes it the default for all of Windows.</p>
+          </article>
+          <article class="card">
+            <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#FFB020" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/><path d="M12 8v4l3 2"/></svg></div>
+            <h3>It remembers</h3>
+            <p>The volume you give an app in Volute comes back the next time it plays. The wheel over the icon sets the master volume.</p>
+          </article>
+        </div>
+        <figure class="wide-shot">
+          <img class="shot" src="../assets/en/main-light.png" width="1170" height="931" alt="Volute's main window in the light theme: a rail with Mixer, Devices, Settings and About, and the mixer view." loading="lazy">
+          <figcaption class="caption">The main window: every device, the settings, in light or dark.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="cost" id="cost">
+      <div class="wrap">
+        <p class="eyebrow">What it costs</p>
+        <h2>It stays open all day. It costs nothing.</h2>
+        <p class="intro">Rust and Slint, with no embedded browser and no runtime to install. Volute sleeps while nothing moves: Windows wakes it when a volume changes.</p>
+        <dl class="figures">
+          <div><dt>0.000&nbsp;%</dt><dd>CPU while it waits in the notification area</dd></div>
+          <div><dt>4&nbsp;MB</dt><dd>of memory while it waits</dd></div>
+          <div><dt>0.12&nbsp;ms</dt><dd>to apply a volume</dd></div>
+          <div><dt>6&nbsp;MB</dt><dd>one executable, nothing else</dd></div>
+        </dl>
+        <p class="note">Measured with <code>cargo xtask bench-overhead</code> on the author's machine. With the mixer open and the meters moving: 2 to 4 % of one core. The figures and the method are in the <a href="https://github.com/EvanPluchart/volute/blob/main/docs/ARCHITECTURE.md">architecture document</a>.</p>
+      </div>
+    </section>
+
+    <section class="privacy" id="privacy">
+      <div class="wrap">
+        <p class="eyebrow">What it reads</p>
+        <h2>It listens to your settings, never to your microphone.</h2>
+        <p class="intro">A mixer sees a lot go by. Here is exactly what Volute does with it.</p>
+        <ul class="reads">
+          <li><strong>Sound</strong><span>The audio sessions and devices Windows reports, their volumes and levels. Volute changes a volume only when you ask.</span></li>
+          <li><strong>Apps</strong><span>Each sound's executable path, to read its name and icon from the file. No other program's memory is opened.</span></li>
+          <li><strong>The microphone</strong><span>Never recorded or captured. Its level shows while another app already uses it.</span></li>
+          <li><strong>The mouse</strong><span>Only the wheel, only while the pointer is over Volute's icon, and nothing is kept.</span></li>
+          <li><strong>The network</strong><span>One request to GitHub to see if a new version is out, and the download if you accept. No account, no telemetry.</span></li>
+          <li><strong>Your rights</strong><span>Nothing beyond yours: it installs for your account and never asks for administrator rights.</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="next" id="next">
+      <div class="wrap">
+        <p class="eyebrow">Next</p>
+        <h2>What is coming.</h2>
+        <p class="intro">Volute is young. The mixer is here; this is what follows, in order.</p>
+        <ol>
+          <li><b>Soon</b><h3>The volume keys</h3><p>Volute handles them, with its own on-screen display, legible and animated. A modifier sets the app in the foreground instead.</p></li>
+          <li><b>Then</b><h3>Profiles</h3><p>Sets of volumes and outputs, applied in one click or with a shortcut: "Work", "Game", "Call".</p></li>
+          <li><b>Later</b><h3>An output per app</h3><p>Music on the speakers, the call in the headset, without a trip to Settings.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="faq" id="questions">
+      <div class="wrap">
+        <p class="eyebrow">Questions</p>
+        <h2>Good to know.</h2>
+        <details><summary>Is it really free?</summary><p>Yes, and open source under the MIT licence. No paid version, no account, no ads.</p></details>
+        <details><summary>Does it need administrator rights?</summary><p>No. Volute installs in your user folder, and everything it does works with a standard account: app and device volumes, the default output.</p></details>
+        <details><summary>How do updates work?</summary><p>Volute checks GitHub at start and every 6 hours. When a version is out, it tells you; one click downloads it, checks its signature and SHA-256, installs it without a window, and Volute starts again. You can turn the check off in Settings.</p></details>
+        <details><summary>Windows shows a warning on first run.</summary><p>The executables are not code-signed yet, so SmartScreen may warn on first run. Each release's <code>SHA256SUMS</code> lets you check what you downloaded.</p></details>
+        <details><summary>Why does my microphone's level stay empty?</summary><p>Windows measures a microphone's level only while an app uses it. Volute never opens the microphone itself, so Windows' "microphone in use" indicator does not light up for nothing.</p></details>
+        <details><summary>How do I uninstall it?</summary><p>From Windows Settings, Apps, like any app. Your settings stay in <code>%APPDATA%\Volute</code>; delete that folder to remove them too.</p></details>
+      </div>
+    </section>
+
+    <section class="download" id="download">
+      <div class="wrap">
+        <h2>One click in the notification area.</h2>
+        <p class="intro">Install Volute for your account in a few seconds. It keeps itself up to date.</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/EvanPluchart/volute/releases/latest">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
+            Download for Windows
+          </a>
+          <a class="button ghost" href="https://github.com/EvanPluchart/volute">Source code</a>
+        </div>
+        <p class="fine">Installer or portable copy · Windows 10 and 11, 64-bit</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <img src="../assets/logo-reversed.svg" alt="Volute" width="112" height="26">
+      <span>MIT licence · made with <a href="https://slint.dev">Slint</a> · <a href="https://github.com/EvanPluchart/volute">GitHub</a> · <a href="../" hreflang="fr" lang="fr">Français</a></span>
+    </div>
+  </footer>
+
+  <script src="../assets/main.js" defer></script>
+</body>
+</html>

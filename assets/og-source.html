@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- The social images, og.png (#fr) and og-en.png (#en): rendered at 1200 x 630 with headless
+     Chrome. See ../README.md. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Figtree"; src: url("fonts/figtree.woff2") format("woff2"); font-weight: 400 800; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background: #5B2BFF; color: #FFF1DE; font-family: "Figtree", sans-serif;
+    display: grid; grid-template-columns: 1fr 330px; gap: 56px; align-items: center;
+    padding: 0 72px; box-sizing: border-box;
+  }
+  img.logo { height: 48px; margin-bottom: 44px; }
+  h1 { font-size: 84px; line-height: 0.95; letter-spacing: -0.04em; font-weight: 800; margin: 0 0 28px; }
+  .meter { height: 12px; width: 420px; border-radius: 6px; background: rgba(255,241,222,.22); overflow: hidden; margin-bottom: 30px; }
+  .meter span { display: block; height: 100%; width: 64%; background: #FFB020; border-radius: 6px; }
+  p { font-size: 27px; margin: 0; color: #E9E2FF; max-width: 640px; line-height: 1.3; }
+  .shot { width: 330px; border-radius: 12px; box-shadow: 0 24px 60px -16px rgba(16,8,48,.6); }
+</style>
+</head>
+<body>
+  <div>
+    <img class="logo" src="logo-reversed.svg" alt="">
+    <h1 id="title">Chaque son à sa place.</h1>
+    <div class="meter"><span></span></div>
+    <p id="line">Le mélangeur de volume pour Windows. Natif, léger, gratuit.</p>
+  </div>
+  <img class="shot" id="shot" src="flyout-dark.png" alt="">
+  <script>
+    if (location.hash === "#en") {
+      document.getElementById("title").textContent = "Every sound in its place.";
+      document.getElementById("line").textContent = "The volume mixer for Windows. Native, light, free.";
+      document.getElementById("shot").src = "en/flyout-dark.png";
+    }
+  </script>
+</body>
+</html>
