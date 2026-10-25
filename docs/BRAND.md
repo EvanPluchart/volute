@@ -12,11 +12,7 @@ A volute is the spiral at the head of a violin, and the curl of a sound unwindin
 
 ## Surfaces
 
-* **The OSD** replaces this:
-
-  ![Windows' volume flyout](ux/windows-osd.png)
-
-  Windows draws a flat grey pill with a speaker glyph, a thin bar and a number, in a fixed corner.
+* **The OSD** replaces Windows' own volume flyout. Windows draws a flat grey pill with a speaker glyph, a thin bar and a number, in a fixed corner.
 
   Volute's OSD is:
   * a rounded card on a soft translucent surface;

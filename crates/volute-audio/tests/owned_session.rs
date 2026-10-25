@@ -1,6 +1,6 @@
 //! The Windows backend on a session the test owns: a helper process plays a quiet tone, the
 //! test finds that session by its process ID, changes its volume and mute, reads them back, and
-//! checks every other session kept its values. Nothing else is ever changed (CLAUDE.md).
+//! checks every other session kept its values. Nothing else is ever changed.
 //!
 //! Events too: listening starts before the tone, so its new session must be announced, and the
 //! test's own changes must come back marked as Volute's (decision 0002's echo rule).
