@@ -1,0 +1,567 @@
+//! Project tasks: `cargo xtask <task>`.
+
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result, bail};
+
+const USAGE: &str = "usage: cargo xtask check
+       cargo xtask bench-overhead [--seconds=N] [--check] [--real]
+       cargo xtask dist
+       cargo xtask release-key";
+const WARM_UP: Duration = Duration::from_secs(5);
+
+/// The performance budget from docs/ARCHITECTURE.md, per state: CPU of one core, private MB.
+struct Budget {
+    cpu_percent: f64,
+    private_mb: f64,
+}
+
+fn main() -> Result<()> {
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
+        Some("check") => check(),
+        Some("dist") => dist(),
+        Some("release-key") => release_key(),
+        Some("bench-overhead") => {
+            let mut seconds = 60;
+            let mut check = false;
+            let mut real = false;
+            for arg in args {
+                if arg == "--check" {
+                    check = true;
+                    continue;
+                }
+                if arg == "--real" {
+                    real = true;
+                    continue;
+                }
+                match arg.strip_prefix("--seconds=").map(str::parse) {
+                    Some(Ok(n)) if n > WARM_UP.as_secs() => seconds = n,
+                    _ => bail!("invalid argument `{arg}`\n{USAGE}"),
+                }
+            }
+            bench_overhead(Duration::from_secs(seconds), check, real)
+        }
+        _ => bail!("{USAGE}"),
+    }
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask lives in the workspace")
+        .to_path_buf()
+}
+
+/// The workspace version, from the root `Cargo.toml`.
+fn version(root: &Path) -> Result<String> {
+    let manifest = std::fs::read_to_string(root.join("Cargo.toml"))?;
+    manifest
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("version = \"")?.strip_suffix('"'))
+        .map(str::to_owned)
+        .context("no version in Cargo.toml")
+}
+
+/// Builds the release into `dist/` (decisions 0005 and 0006): the Inno Setup installer, a
+/// portable zip, and `SHA256SUMS` for both, which the updater checks before running anything.
+/// Nothing is uploaded: the author attaches the three files to a draft release.
+fn dist() -> Result<()> {
+    let root = workspace_root();
+    let version = version(&root)?;
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let status = Command::new(cargo)
+        .current_dir(&root)
+        .args(["build", "--release", "--locked", "-p", "volute"])
+        .status()
+        .context("running cargo build")?;
+    if !status.success() {
+        bail!("release build failed");
+    }
+    if !cfg!(windows) {
+        bail!("dist builds the Windows installer, on Windows");
+    }
+    let out = root.join("dist");
+    std::fs::create_dir_all(&out)?;
+    let exe = root.join("target/release/volute.exe");
+    // Inno Setup 6, as winget installs it, or where ISCC says.
+    let iscc = std::env::var_os("ISCC")
+        .map(PathBuf::from)
+        .into_iter()
+        .chain(std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Programs/Inno Setup 6/ISCC.exe")))
+        .chain([PathBuf::from(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe")])
+        .find(|p| p.exists())
+        .context("Inno Setup 6 not found: install it (winget install JRSoftware.InnoSetup), or set ISCC")?;
+    let status = Command::new(&iscc)
+        .current_dir(root.join("packaging/windows"))
+        .arg("/Q")
+        .arg(format!("/DAppVersion={version}"))
+        .arg(format!("/DSourceExe={}", exe.display()))
+        .arg(format!("/DOutputDir={}", out.display()))
+        .arg("volute.iss")
+        .status()
+        .context("running ISCC")?;
+    if !status.success() {
+        bail!("the installer did not build");
+    }
+    // The portable copy: the exe alone runs anywhere; settings stay in %APPDATA%\Volute.
+    let zip_name = format!("Volute-{version}-portable.zip");
+    let zip = out.join(&zip_name);
+    let _ = std::fs::remove_file(&zip);
+    let status = Command::new("tar")
+        .current_dir(exe.parent().context("exe folder")?)
+        .args(["-a", "-c", "-f"])
+        .arg(&zip)
+        .arg("volute.exe")
+        .status()
+        .context("running tar")?;
+    if !status.success() {
+        bail!("the portable zip did not build");
+    }
+    let setup_name = format!("Volute-{version}-setup.exe");
+    // `sha256sum` format, the one volute-core::update reads.
+    let mut sums = String::new();
+    for name in [&setup_name, &zip_name] {
+        let digest = sha256(&std::fs::read(out.join(name))?)?;
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        sums.push_str(&format!("{hex}  {name}\n"));
+    }
+    std::fs::write(out.join("SHA256SUMS"), &sums)?;
+    // Signed with the release key, whose public half is built into Volute: the updater trusts
+    // no checksum without it (decision 0010).
+    let signature = sign::sign(&root, sums.as_bytes())?;
+    let hex: String = signature.iter().map(|b| format!("{b:02x}")).collect();
+    std::fs::write(out.join("SHA256SUMS.sig"), format!("{hex}\n"))?;
+    for name in [setup_name.as_str(), zip_name.as_str(), "SHA256SUMS", "SHA256SUMS.sig"] {
+        println!("dist: {}", out.join(name).display());
+    }
+    print!("{sums}");
+    Ok(())
+}
+
+/// Creates the release signing key (decision 0010), once, outside the repository.
+fn release_key() -> Result<()> {
+    let public = sign::generate()?;
+    let hex: String = public.iter().map(|b| format!("{b:02x}")).collect();
+    println!("release-key: private key written to {}", sign::key_path()?.display());
+    println!("release-key: keep a copy somewhere safe; without it, no update can be published.");
+    println!("release-key: put this public key in crates/volute-core/src/update.rs (RELEASE_KEY):");
+    println!("{hex}");
+    Ok(())
+}
+
+/// SHA-256 through Windows' own BCrypt.
+#[cfg(windows)]
+fn sha256(data: &[u8]) -> Result<[u8; 32]> {
+    use windows_sys::Win32::Security::Cryptography::{BCRYPT_SHA256_ALG_HANDLE, BCryptHash};
+    let mut digest = [0u8; 32];
+    let len = u32::try_from(data.len()).context("file too large")?;
+    // SAFETY: the SHA-256 pseudo-handle; input and output sizes as passed.
+    let status = unsafe { BCryptHash(BCRYPT_SHA256_ALG_HANDLE, std::ptr::null(), 0, data.as_ptr(), len, digest.as_mut_ptr(), 32) };
+    if status != 0 {
+        bail!("BCryptHash failed ({status:#x})");
+    }
+    Ok(digest)
+}
+
+#[cfg(not(windows))]
+fn sha256(_: &[u8]) -> Result<[u8; 32]> {
+    bail!("SHA-256 is computed with Windows' BCrypt")
+}
+
+/// What a CI would run, run here instead (decision 0006): check, test and clippy with warnings
+/// as errors, all against the committed lockfile. Stops at the first failure.
+fn check() -> Result<()> {
+    let root = workspace_root();
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let steps: [&[&str]; 3] = [
+        &["check", "--workspace", "--all-targets", "--locked"],
+        &["test", "--workspace", "--locked"],
+        &["clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"],
+    ];
+    for step in steps {
+        println!("> cargo {}", step.join(" "));
+        let status = Command::new(&cargo)
+            .current_dir(&root)
+            .args(step)
+            .status()
+            .context("running cargo")?;
+        if !status.success() {
+            bail!("`cargo {}` failed", step.join(" "));
+        }
+    }
+    println!("check: all passed");
+    Ok(())
+}
+
+/// Builds Volute in release, then runs it three times: the main window open with meters running,
+/// the flyout open over the tray, then idle in the tray with nothing shown. Prints CPU of one core and peak private memory. With `check`,
+/// fails when a state is over budget. On the mock, unless `real`: then on this machine's Core
+/// Audio, read only (no settings file, so no remembered volume is ever applied).
+fn bench_overhead(duration: Duration, check: bool, real: bool) -> Result<()> {
+    let root = workspace_root();
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let status = Command::new(cargo)
+        .current_dir(&root)
+        .args(["build", "--release", "--locked", "-p", "volute"])
+        .status()
+        .context("running cargo build")?;
+    if !status.success() {
+        bail!("release build failed");
+    }
+    let exe = root
+        .join("target/release/volute")
+        .with_extension(std::env::consts::EXE_EXTENSION);
+
+    // No settings file: a benchmark neither reads nor changes the user's setup, applies no
+    // remembered volume, and runs next to the user's own Volute. The mock by default.
+    let source: &[&str] = if real { &[] } else { &["--mock"] };
+    let states = [
+        (
+            "open",
+            &["--no-settings", "--open", "--no-tray"][..],
+            Budget {
+                cpu_percent: 4.0,
+                private_mb: 40.0,
+            },
+        ),
+        (
+            // The mixer as it is used: the flyout over the tray, the main window hidden.
+            "flyout",
+            &["--no-settings", "--flyout"][..],
+            Budget {
+                cpu_percent: 4.0,
+                private_mb: 40.0,
+            },
+        ),
+        (
+            "idle",
+            &["--no-settings"][..],
+            Budget {
+                cpu_percent: 0.1,
+                private_mb: 25.0,
+            },
+        ),
+    ];
+    let mut over = Vec::new();
+    println!();
+    let on = if real { "this machine's Core Audio, read only" } else { "the mock" };
+    println!("volute overhead on {on}, {} s per state", duration.as_secs());
+    for (name, args, budget) in states {
+        let mut child = Command::new(&exe)
+            .args(source)
+            .args(args)
+            .spawn()
+            .with_context(|| format!("starting {}", exe.display()))?;
+        let result = measure(&child, duration);
+        stop(&mut child);
+        let m = result?;
+        println!(
+            "  {name:<6} CPU {:.3} % of one core (after a {} s warm-up), private {:.1} MB peak \
+             ({:.1} MB at the end); budget < {} %, < {} MB",
+            m.cpu_percent,
+            WARM_UP.as_secs(),
+            m.peak_private_mb,
+            m.last_private_mb,
+            budget.cpu_percent,
+            budget.private_mb
+        );
+        if m.cpu_percent >= budget.cpu_percent || m.peak_private_mb >= budget.private_mb {
+            over.push(name);
+        }
+    }
+    if over.is_empty() {
+        println!("  within budget");
+    } else {
+        println!("  over budget: {}", over.join(", "));
+        if check {
+            bail!("over budget: {}", over.join(", "));
+        }
+    }
+    Ok(())
+}
+
+struct Measurement {
+    cpu_percent: f64,
+    peak_private_mb: f64,
+    last_private_mb: f64,
+}
+
+fn measure(child: &Child, duration: Duration) -> Result<Measurement> {
+    let start = Instant::now();
+    thread::sleep(WARM_UP);
+    let cpu_at_warm_up = os::cpu_time(child)?;
+    let warmed = Instant::now();
+    while start.elapsed() < duration {
+        thread::sleep(Duration::from_millis(250));
+        if os::exited(child) {
+            bail!("volute exited during the benchmark");
+        }
+    }
+    let cpu = os::cpu_time(child)?.saturating_sub(cpu_at_warm_up);
+    let memory = os::memory(child)?;
+    let mb = |bytes: u64| bytes as f64 / (1024.0 * 1024.0);
+    Ok(Measurement {
+        cpu_percent: cpu.as_secs_f64() / warmed.elapsed().as_secs_f64() * 100.0,
+        peak_private_mb: mb(memory.peak_private),
+        last_private_mb: mb(memory.private),
+    })
+}
+
+/// Ends Volute the way the user would: closing its window, or, hidden in the tray, the
+/// sign-out message its tray window quits on. Killing it would leave a dead tray icon.
+fn stop(child: &mut Child) {
+    let pid = child.id().to_string();
+    // Without /F: a close request, as the close button sends.
+    let _ = Command::new("taskkill").args(["/PID", &pid]).output();
+    os::end_session(child);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            println!("        (quit cleanly)");
+            return;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    // Started by this task, so stopping it here is safe.
+    println!("        (did not quit: killed)");
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+struct Memory {
+    private: u64,
+    peak_private: u64,
+}
+
+#[cfg(windows)]
+mod os {
+    use std::os::windows::io::AsRawHandle;
+    use std::process::Child;
+    use std::time::Duration;
+
+    use anyhow::{Result, bail};
+    use windows_sys::Win32::Foundation::{FILETIME, HWND, LPARAM, WAIT_OBJECT_0};
+    use windows_sys::Win32::System::ProcessStatus::{
+        GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
+    };
+    use windows_sys::Win32::System::Threading::{GetProcessTimes, WaitForSingleObject};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetClassNameW, GetWindowThreadProcessId, PostMessageW, WM_ENDSESSION,
+    };
+
+    use super::Memory;
+
+    pub fn cpu_time(child: &Child) -> Result<Duration> {
+        let mut times = [FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 }; 4];
+        let [created, exited, kernel, user] = &mut times;
+        // SAFETY: the child's own process handle, valid while `child` lives.
+        let ok = unsafe { GetProcessTimes(child.as_raw_handle(), created, exited, kernel, user) };
+        if ok == 0 {
+            bail!("reading volute's CPU time");
+        }
+        let ticks = |t: &FILETIME| (u64::from(t.dwHighDateTime) << 32) | u64::from(t.dwLowDateTime);
+        // 100 ns units.
+        Ok(Duration::from_nanos((ticks(kernel) + ticks(user)) * 100))
+    }
+
+    pub fn memory(child: &Child) -> Result<Memory> {
+        let mut counters = PROCESS_MEMORY_COUNTERS_EX {
+            cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: as above; the structure is sized for the extended counters.
+        let ok = unsafe {
+            GetProcessMemoryInfo(
+                child.as_raw_handle(),
+                (&raw mut counters).cast::<PROCESS_MEMORY_COUNTERS>(),
+                counters.cb,
+            )
+        };
+        if ok == 0 {
+            bail!("reading volute's memory");
+        }
+        Ok(Memory {
+            private: counters.PrivateUsage as u64,
+            // The commit charge's peak: private memory at its highest over the whole run.
+            peak_private: counters.PeakPagefileUsage as u64,
+        })
+    }
+
+    pub fn exited(child: &Child) -> bool {
+        // SAFETY: as above; a zero timeout only polls.
+        unsafe { WaitForSingleObject(child.as_raw_handle(), 0) == WAIT_OBJECT_0 }
+    }
+
+    /// Posts "the session ends" to the child's tray window, which quits on it (decision 0004).
+    pub fn end_session(child: &Child) {
+        struct Search {
+            pid: u32,
+            found: HWND,
+        }
+        unsafe extern "system" fn each(hwnd: HWND, data: LPARAM) -> i32 {
+            // SAFETY: `data` points to the `Search` below, alive during EnumWindows.
+            let search = unsafe { &mut *(data as *mut Search) };
+            let mut pid = 0;
+            let mut class = [0u16; 64];
+            // SAFETY: plain queries into buffers that outlive the calls.
+            let len = unsafe {
+                GetWindowThreadProcessId(hwnd, &mut pid);
+                GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32)
+            };
+            if pid == search.pid && String::from_utf16_lossy(&class[..len.max(0) as usize]) == "VoluteTrayWindow" {
+                search.found = hwnd;
+                return 0;
+            }
+            1
+        }
+        let mut search = Search {
+            pid: child.id(),
+            found: std::ptr::null_mut(),
+        };
+        // SAFETY: the callback only reads windows and writes `search`.
+        unsafe {
+            EnumWindows(Some(each), (&raw mut search) as LPARAM);
+            if !search.found.is_null() {
+                PostMessageW(search.found, WM_ENDSESSION, 1, 0);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod os {
+    use std::process::Child;
+    use std::time::Duration;
+
+    use anyhow::{Result, bail};
+
+    use super::Memory;
+
+    pub fn cpu_time(_: &Child) -> Result<Duration> {
+        bail!("bench-overhead runs on Windows")
+    }
+
+    pub fn memory(_: &Child) -> Result<Memory> {
+        bail!("bench-overhead runs on Windows")
+    }
+
+    pub fn exited(_: &Child) -> bool {
+        true
+    }
+
+    pub fn end_session(_: &Child) {}
+}
+
+/// The release signing key (decision 0010): ECDSA P-256 through Windows' own BCrypt. The private
+/// key lives outside the repository, in `VOLUTE_SIGNING_KEY` or
+/// `%USERPROFILE%\.volute-release\signing-key.bin`.
+mod sign {
+    use std::path::{Path, PathBuf};
+
+    use anyhow::{Context, Result, bail};
+
+    pub fn key_path() -> Result<PathBuf> {
+        if let Some(path) = std::env::var_os("VOLUTE_SIGNING_KEY") {
+            return Ok(PathBuf::from(path));
+        }
+        let home = std::env::var_os("USERPROFILE").context("no USERPROFILE")?;
+        Ok(PathBuf::from(home).join(".volute-release").join("signing-key.bin"))
+    }
+
+    /// The public key built into Volute, read from volute-core's source.
+    fn built_in(root: &Path) -> Result<String> {
+        let source = std::fs::read_to_string(root.join("crates/volute-core/src/update.rs"))?;
+        source
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("pub const RELEASE_KEY: &str = \""))
+            .and_then(|rest| rest.strip_suffix("\";"))
+            .map(str::to_owned)
+            .context("no RELEASE_KEY in volute-core/src/update.rs")
+    }
+
+    #[cfg(windows)]
+    mod bcrypt {
+        pub use windows_sys::Win32::Security::Cryptography::{
+            BCRYPT_ECCPRIVATE_BLOB, BCRYPT_ECDSA_P256_ALG_HANDLE, BCRYPT_ECDSA_PRIVATE_P256_MAGIC, BCryptDestroyKey,
+            BCryptExportKey, BCryptFinalizeKeyPair, BCryptGenerateKeyPair, BCryptImportKeyPair, BCryptSignHash,
+        };
+    }
+
+    /// Makes a new key pair and saves the private blob; returns the public point (x then y).
+    #[cfg(windows)]
+    pub fn generate() -> Result<[u8; 64]> {
+        use bcrypt::*;
+        let path = key_path()?;
+        if path.exists() {
+            bail!("{} exists already: a new key would make every published release unverifiable", path.display());
+        }
+        let mut key = std::ptr::null_mut();
+        let mut blob = [0u8; 8 + 96];
+        let mut len = 0u32;
+        // SAFETY: a key handle created, finalised, exported into a buffer of the size given and
+        // destroyed here.
+        unsafe {
+            if BCryptGenerateKeyPair(BCRYPT_ECDSA_P256_ALG_HANDLE, &mut key, 256, 0) != 0 || BCryptFinalizeKeyPair(key, 0) != 0 {
+                bail!("BCrypt could not make a P-256 key");
+            }
+            let status = BCryptExportKey(key, std::ptr::null_mut(), BCRYPT_ECCPRIVATE_BLOB, blob.as_mut_ptr(), blob.len() as u32, &mut len, 0);
+            BCryptDestroyKey(key);
+            if status != 0 || len as usize != blob.len() {
+                bail!("BCrypt could not export the key");
+            }
+        }
+        std::fs::create_dir_all(path.parent().context("key folder")?)?;
+        std::fs::write(&path, blob)?;
+        let mut public = [0u8; 64];
+        public.copy_from_slice(&blob[8..72]);
+        Ok(public)
+    }
+
+    /// Signs SHA-256(`data`) with the private key, after checking it is the one built into Volute.
+    #[cfg(windows)]
+    pub fn sign(root: &Path, data: &[u8]) -> Result<[u8; 64]> {
+        use bcrypt::*;
+        let path = key_path()?;
+        let blob = std::fs::read(&path).with_context(|| {
+            format!("no signing key at {} (cargo xtask release-key, or set VOLUTE_SIGNING_KEY)", path.display())
+        })?;
+        if blob.len() != 104 || blob[..4] != BCRYPT_ECDSA_PRIVATE_P256_MAGIC.to_le_bytes() {
+            bail!("{} is not a P-256 private key", path.display());
+        }
+        let public: String = blob[8..72].iter().map(|b| format!("{b:02x}")).collect();
+        if public != built_in(root)? {
+            bail!("the signing key does not match RELEASE_KEY in volute-core: Volute would refuse this release");
+        }
+        let hash = super::sha256(data)?;
+        let mut key = std::ptr::null_mut();
+        let mut signature = [0u8; 64];
+        let mut len = 0u32;
+        // SAFETY: a private blob of the size given; the key is destroyed after signing into a
+        // 64-byte buffer.
+        unsafe {
+            if BCryptImportKeyPair(BCRYPT_ECDSA_P256_ALG_HANDLE, std::ptr::null_mut(), BCRYPT_ECCPRIVATE_BLOB, &mut key, blob.as_ptr(), blob.len() as u32, 0) != 0 {
+                bail!("BCrypt could not read the signing key");
+            }
+            let status = BCryptSignHash(key, std::ptr::null(), hash.as_ptr(), 32, signature.as_mut_ptr(), 64, &mut len, 0);
+            BCryptDestroyKey(key);
+            if status != 0 || len != 64 {
+                bail!("BCrypt could not sign");
+            }
+        }
+        Ok(signature)
+    }
+
+    #[cfg(not(windows))]
+    pub fn generate() -> Result<[u8; 64]> {
+        bail!("the release key is made with Windows' BCrypt")
+    }
+
+    #[cfg(not(windows))]
+    pub fn sign(_: &Path, _: &[u8]) -> Result<[u8; 64]> {
+        bail!("releases are signed with Windows' BCrypt")
+    }
+}

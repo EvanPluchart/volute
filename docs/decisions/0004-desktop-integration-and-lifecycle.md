@@ -1,6 +1,6 @@
 # 0004 — Desktop integration and lifecycle
 
-**Status:** accepted, 2026-10-24
+**Status:** accepted, 2026-10-24. Amended by 0009 (closing) and 0012 (the icon next to the clock, what a launch shows).
 
 ## Context
 

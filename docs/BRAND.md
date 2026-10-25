@@ -41,6 +41,16 @@ A volute is the spiral at the head of a violin, and the curl of a sound unwindin
 * **Light and dark from the start**, following the system, with a setting to choose.
 * **Contrast:** AA for every text against its surface, in both themes.
 
+## Logo (chosen 2026-10-24)
+
+![Volute](../assets/brand/png/volute-horizontal.png)
+
+**The V of Volute carries a scroll head, as a violin does.** The head is amber, a volute cut into it; muted, it turns red and the volute becomes a bar. The kit, its colours, sizes and rules are in [assets/brand/README.md](../assets/brand/README.md).
+
+* **Palette:** violet `#5B2BFF` (the tile, the brand's ground), cream `#FFF1DE` (the V on violet), amber `#FFB020` (the head: still the one accent), ink `#1B1530` (text), danger `#FF4D5E` (muted only).
+* **Style:** heavy, flat, rounded, two or three colours on a coloured tile. The interface's tokens follow this palette in the design track.
+* How it was reached: three concepts (a knob volute, the V with a scroll, a volute unwinding into a fader), then the V redrawn bold with a round head and four palettes. All of them are in `assets/brand/concepts/`.
+
 ## Logo brief (for the `logo-design` skill)
 
 * **Idea to explore:** a volute (a violin scroll's spiral) that is also a volume sign: a spiral unwinding like sound waves, or a knob whose indicator traces a volute.

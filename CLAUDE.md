@@ -26,12 +26,14 @@ cargo check --workspace
 cargo test --workspace
 cargo clippy --workspace -- -D warnings
 cargo run -p volute -- --open --no-settings
+cargo xtask check          # check, test and clippy, all --locked: run before every push (no hosted CI, decision 0006)
 cargo xtask bench-overhead
+cargo xtask dist           # installer, portable zip, SHA256SUMS and its signature into dist/ (decisions 0005, 0010); uploads nothing
 ```
 
 ## Seeing the app
 
-Launch with test flags (`--open`, `--osd`, `--tab`, `--dark`/`--light`, `--no-settings`, `--no-tray`, `--no-hook`, `--no-update-check`) to reach a state directly. On Windows, capture windows with PrintWindow, not a screen grab. Never send synthetic input unless the Volute window is verified to be in the foreground. Test runs never go online and never install a keyboard hook unless the test is about the hook.
+Launch with test flags (`--open`, `--mock`, `--flyout[=center]`, `--tab=mixer|devices|settings|about`, `--dark`/`--light`, `--lang=en|fr`, `--no-settings`, `--no-tray`, `--no-update-check`, `--offer-update=X.Y.Z`; `--osd` and `--no-hook` come with M2) to reach a state directly. Screenshots for anything public use `--mock`, never the user's real apps. The release signing key lives outside the repository (decision 0010): never copy, print or commit it. On Windows, capture windows with PrintWindow, not a screen grab. Never send synthetic input unless the Volute window is verified to be in the foreground. Test runs never go online and never install a keyboard hook unless the test is about the hook.
 
 ## Skills
 

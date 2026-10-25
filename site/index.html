@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Volute — le mélangeur de volume pour Windows</title>
+  <meta name="description" content="Le volume de chaque app et de chaque périphérique, à un clic de la zone de notification. Natif, léger, gratuit et open source, pour Windows 10 et 11.">
+  <link rel="canonical" href="https://evanpluchart.github.io/volute/">
+  <link rel="alternate" hreflang="fr" href="https://evanpluchart.github.io/volute/">
+  <link rel="alternate" hreflang="en" href="https://evanpluchart.github.io/volute/en/">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#5B2BFF">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Volute — le mélangeur de volume pour Windows">
+  <meta property="og:description" content="Le volume de chaque app et de chaque périphérique, à un clic de la zone de notification.">
+  <meta property="og:url" content="https://evanpluchart.github.io/volute/">
+  <meta property="og:image" content="https://evanpluchart.github.io/volute/assets/og.png">
+  <meta property="og:locale" content="fr_FR">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preload" href="assets/fonts/figtree.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Aller au contenu</a>
+
+  <header class="hero">
+    <div class="wrap top">
+      <a class="logo" href="./" aria-label="Volute, accueil"><img src="assets/logo-reversed.svg" alt="Volute" width="146" height="34"></a>
+      <nav aria-label="Navigation principale">
+        <a class="hide-small" href="#essayer">Essayer</a>
+        <a class="hide-small" href="#cout">Ce qu'il coûte</a>
+        <a class="hide-small" href="https://github.com/EvanPluchart/volute">GitHub</a>
+        <a class="lang" href="en/" hreflang="en" lang="en">English</a>
+      </nav>
+    </div>
+    <div class="wrap hero-grid">
+      <div>
+        <h1>Chaque son à sa&nbsp;place.</h1>
+        <div class="meter" aria-hidden="true"><span></span></div>
+        <p class="lead">Volute est un mélangeur de volume pour Windows. Le volume de chaque app, son niveau en direct, chaque sortie et chaque micro, à un clic de la zone de notification. Il se fait oublier le reste du temps.</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/EvanPluchart/volute/releases/latest">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
+            Télécharger pour Windows
+          </a>
+          <a class="button ghost" href="https://github.com/EvanPluchart/volute">Voir le code</a>
+        </div>
+        <p class="fine">Windows 10 et 11 · gratuit et open source (MIT) · sans droits administrateur</p>
+      </div>
+      <img class="shot" src="assets/flyout-dark.png" width="720" height="862" alt="Le mélangeur de Volute ouvert depuis la zone de notification : la sortie principale en haut, puis une ligne par app avec son icône, son volume et son niveau, puis le micro.">
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="try" id="essayer">
+      <div class="wrap try-grid">
+        <div>
+          <p class="eyebrow">Essayez</p>
+          <h2>Un fader, pas un formulaire.</h2>
+          <p class="intro">Chaque app a sa ligne. Le fader règle son volume, le niveau ambré montre ce qu'elle joue, en direct, et un clic sur l'icône la coupe. Les sons système restent à part, et une app qui s'est tue s'efface au bout d'une minute.</p>
+          <p class="hint">Faites glisser, ou utilisez les flèches du clavier. Cliquez une icône pour couper le son.</p>
+        </div>
+        <div class="desk" role="group" aria-label="Démonstration du mélangeur">
+          <div class="strip">
+            <button class="mute" type="button" aria-pressed="false" aria-label="Couper Musique" data-mute="Couper" data-unmute="Rétablir">
+              <span class="icon" style="background:#1EA862"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5" fill="#fff"/><circle cx="16.5" cy="16" r="2.5" fill="#fff"/></svg></span>
+            </button>
+            <div class="name"><span>Musique</span><output>72</output></div>
+            <div class="fader"><input type="range" min="0" max="100" step="2" value="72" aria-label="Volume de Musique"><div class="track"><div class="fill"></div><div class="level"></div></div><div class="thumb"></div></div>
+          </div>
+          <div class="strip">
+            <button class="mute" type="button" aria-pressed="false" aria-label="Couper Appel" data-mute="Couper" data-unmute="Rétablir">
+              <span class="icon" style="background:#4F6BF5"><svg viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg></span>
+            </button>
+            <div class="name"><span>Appel</span><output>56</output></div>
+            <div class="fader"><input type="range" min="0" max="100" step="2" value="56" aria-label="Volume de Appel"><div class="track"><div class="fill"></div><div class="level"></div></div><div class="thumb"></div></div>
+          </div>
+          <div class="strip">
+            <button class="mute" type="button" aria-pressed="false" aria-label="Couper Jeu" data-mute="Couper" data-unmute="Rétablir">
+              <span class="icon" style="background:#3A3F58"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2.5" y="7" width="19" height="11" rx="5.5" fill="#fff" stroke="none"/><path d="M7 10.5v4M5 12.5h4" stroke="#3A3F58"/><circle cx="15.5" cy="11.5" r="1" fill="#3A3F58" stroke="none"/><circle cx="17.5" cy="13.8" r="1" fill="#3A3F58" stroke="none"/></svg></span>
+            </button>
+            <div class="name"><span>Jeu</span><output>84</output></div>
+            <div class="fader"><input type="range" min="0" max="100" step="2" value="84" aria-label="Volume de Jeu"><div class="track"><div class="fill"></div><div class="level"></div></div><div class="thumb"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="fonctions">
+      <div class="wrap">
+        <p class="eyebrow">Ce que Windows ne fait pas</p>
+        <h2>Le mélangeur que Windows a rangé au fond des Paramètres.</h2>
+        <p class="intro">Celui de Windows est à quatre clics, n'affiche aucun niveau et oublie vos apps. Volute vit dans la zone de notification et va droit au but.</p>
+        <div class="feature-grid">
+          <article class="card">
+            <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#FFB020" stroke-width="2" stroke-linecap="round"><path d="M6 4v16M12 4v16M18 4v16M3.5 14h5M9.5 8h5M15.5 16h5"/></svg></div>
+            <h3>Chaque app, avec son niveau</h3>
+            <p>Le vrai nom et l'icône de chaque app, son volume et ce qu'elle joue en direct. Les processus d'une même app ne font qu'une ligne.</p>
+          </article>
+          <article class="card">
+            <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#FFB020" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></div>
+            <h3>Changer de sortie en un clic</h3>
+            <p>Casque, enceintes, écran : la sortie se choisit en haut du mélangeur, et Volute la définit par défaut pour tout Windows.</p>
+          </article>
+          <article class="card">
+            <div class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#FFB020" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/><path d="M12 8v4l3 2"/></svg></div>
+            <h3>Il se souvient</h3>
+            <p>Le volume que vous donnez à une app dans Volute revient la prochaine fois qu'elle joue. La molette sur l'icône règle le volume général.</p>
+          </article>
+        </div>
+        <figure class="wide-shot">
+          <img class="shot" src="assets/main-light.png" width="975" height="781" alt="La fenêtre principale de Volute en thème clair : un rail avec Mélangeur, Périphériques, Réglages et À propos, et la vue du mélangeur." loading="lazy">
+          <figcaption class="caption">La fenêtre principale : tous les périphériques, les réglages, en clair ou en sombre.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="cost" id="cout">
+      <div class="wrap">
+        <p class="eyebrow">Ce qu'il coûte</p>
+        <h2>Il reste ouvert toute la journée. Il ne coûte rien.</h2>
+        <p class="intro">Rust et Slint, sans navigateur embarqué ni environnement à installer. Volute dort tant que rien ne bouge : Windows le réveille quand un volume change.</p>
+        <dl class="figures">
+          <div><dt>0,000&nbsp;%</dt><dd>de processeur en attente dans la zone de notification</dd></div>
+          <div><dt>4&nbsp;Mo</dt><dd>de mémoire en attente</dd></div>
+          <div><dt>0,12&nbsp;ms</dt><dd>pour appliquer un volume</dd></div>
+          <div><dt>6,4&nbsp;Mo</dt><dd>l'installateur, sans rien d'autre à installer</dd></div>
+        </dl>
+        <p class="note">Mesuré avec <code>cargo xtask bench-overhead</code> sur la machine de l'auteur. Mélangeur ouvert, avec les niveaux qui bougent : 2 à 4 % d'un cœur. Les chiffres et la méthode sont dans le <a href="https://github.com/EvanPluchart/volute/blob/main/docs/ARCHITECTURE.md">document d'architecture</a>.</p>
+      </div>
+    </section>
+
+    <section class="privacy" id="vie-privee">
+      <div class="wrap">
+        <p class="eyebrow">Ce qu'il lit</p>
+        <h2>Il écoute vos réglages, jamais votre micro.</h2>
+        <p class="intro">Un mélangeur voit passer beaucoup de choses. Voici exactement ce que Volute en fait.</p>
+        <ul class="reads">
+          <li><strong>Le son</strong><span>Les sessions audio et les périphériques que Windows signale, leurs volumes et leurs niveaux. Volute ne change un volume que si vous le demandez.</span></li>
+          <li><strong>Les apps</strong><span>Le chemin de l'exécutable de chaque son, pour lire son nom et son icône dans le fichier. Aucune mémoire d'un autre programme n'est ouverte.</span></li>
+          <li><strong>Le micro</strong><span>Jamais enregistré ni capté. Son niveau s'affiche quand une autre app l'utilise déjà.</span></li>
+          <li><strong>La souris</strong><span>Seulement la molette, seulement quand le pointeur est sur l'icône de Volute, et rien n'est gardé.</span></li>
+          <li><strong>Le réseau</strong><span>Une requête à GitHub pour savoir si une nouvelle version existe, et son téléchargement si vous l'acceptez. Pas de compte, pas de télémétrie.</span></li>
+          <li><strong>Vos droits</strong><span>Rien de plus que les vôtres : il s'installe pour votre compte et ne demande jamais les droits administrateur.</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="next" id="ensuite">
+      <div class="wrap">
+        <p class="eyebrow">Ensuite</p>
+        <h2>Ce qui arrive.</h2>
+        <p class="intro">Volute est jeune. Le mélangeur est là ; voici la suite, dans l'ordre.</p>
+        <ol>
+          <li><b>Bientôt</b><h3>Les touches de volume</h3><p>Volute les prend en charge, avec son propre affichage à l'écran, lisible et animé. Une touche de modification règle l'app au premier plan.</p></li>
+          <li><b>Ensuite</b><h3>Les profils</h3><p>Des ensembles de volumes et de sorties, appliqués en un clic ou un raccourci : « Travail », « Jeu », « Appel ».</p></li>
+          <li><b>Plus tard</b><h3>Une sortie par app</h3><p>La musique dans les enceintes, l'appel dans le casque, sans passer par les Paramètres.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="faq" id="questions">
+      <div class="wrap">
+        <p class="eyebrow">Questions</p>
+        <h2>Bon à savoir.</h2>
+        <details><summary>C'est vraiment gratuit ?</summary><p>Oui, et open source sous licence MIT. Pas de version payante, pas de compte, pas de publicité.</p></details>
+        <details><summary>Faut-il les droits administrateur ?</summary><p>Non. Volute s'installe dans votre dossier utilisateur et tout ce qu'il fait marche avec les droits d'un compte standard : volumes des apps et des périphériques, sortie par défaut.</p></details>
+        <details><summary>Comment se font les mises à jour ?</summary><p>Volute regarde sur GitHub au démarrage puis toutes les 6 heures. Quand une version sort, il vous le dit ; un clic la télécharge, vérifie sa signature et son empreinte SHA-256, et l'installe sans fenêtre, puis Volute redémarre. Vous pouvez couper cette vérification dans les Réglages.</p></details>
+        <details><summary>Windows affiche un avertissement au premier lancement.</summary><p>Les exécutables ne sont pas encore signés, donc SmartScreen peut prévenir au premier lancement. Le fichier <code>SHA256SUMS</code> de chaque version permet de vérifier ce que vous avez téléchargé.</p></details>
+        <details><summary>Et le niveau de mon micro qui reste vide ?</summary><p>Windows ne mesure le niveau d'un micro que lorsqu'une app l'utilise. Volute n'ouvre jamais le micro lui-même, pour ne pas allumer l'indicateur « micro utilisé » de Windows sans raison.</p></details>
+        <details><summary>Comment le désinstaller ?</summary><p>Depuis les Paramètres de Windows, Applications, comme n'importe quelle app. Vos réglages restent dans <code>%APPDATA%\Volute</code> ; supprimez ce dossier pour les effacer aussi.</p></details>
+      </div>
+    </section>
+
+    <section class="download" id="telecharger">
+      <div class="wrap">
+        <h2>Un clic dans la zone de notification.</h2>
+        <p class="intro">Installez Volute pour votre compte, en quelques secondes. Il se met à jour tout seul.</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/EvanPluchart/volute/releases/latest">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
+            Télécharger pour Windows
+          </a>
+          <a class="button ghost" href="https://github.com/EvanPluchart/volute">Code source</a>
+        </div>
+        <p class="fine">Installateur ou version portable · Windows 10 et 11, 64 bits</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <img src="assets/logo-reversed.svg" alt="Volute" width="112" height="26">
+      <span>Licence MIT · fait avec <a href="https://slint.dev">Slint</a> · <a href="https://github.com/EvanPluchart/volute">GitHub</a> · <a href="en/" hreflang="en" lang="en">English</a></span>
+    </div>
+  </footer>
+
+  <script src="assets/main.js" defer></script>
+</body>
+</html>

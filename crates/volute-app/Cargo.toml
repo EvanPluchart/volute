@@ -1,0 +1,24 @@
+[package]
+name = "volute"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Volute: a volume mixer for Windows"
+
+[[bin]]
+name = "volute"
+path = "src/main.rs"
+
+[dependencies]
+volute-audio.workspace = true
+volute-core.workspace = true
+volute-shell.workspace = true
+slint.workspace = true
+flume.workspace = true
+anyhow.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true
+winresource.workspace = true

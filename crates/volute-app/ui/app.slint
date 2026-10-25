@@ -1,0 +1,323 @@
+// Volute's windows: the flyout opened from the tray and the main window. The mixer's data and
+// views are in mixer.slint, settings and About in settings.slint, the controls in
+// controls.slint, the tokens in theme.slint.
+
+import { Palette } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Activator, Glyph } from "controls.slint";
+import { AppList, DevicesPanel, Footer, Master, Mixer, SectionTitle } from "mixer.slint";
+import { AboutPanel, Prefs, SettingsPanel, UpdateBanner, Updates, UpdateText } from "settings.slint";
+
+export { Mixer, AppRow, DeviceRow } from "mixer.slint";
+export { Prefs, Updates }
+
+// The tray menu's and notifications' labels, translated here like every other string.
+export global TrayText {
+    public pure function open() -> string {
+        return @tr("Open Volute");
+    }
+    public pure function quit() -> string {
+        return @tr("Quit");
+    }
+    public pure function mute() -> string {
+        return @tr("Mute all");
+    }
+    public pure function settings() -> string {
+        return @tr("Settings");
+    }
+    public pure function tooltip(device: string, volume: int, muted: bool) -> string {
+        return muted ? @tr("{}: muted", device) : @tr("{}: {}%", device, volume);
+    }
+    public pure function update-title(version: string) -> string {
+        return @tr("Volute {} is available", version);
+    }
+    public pure function update-body() -> string {
+        return @tr("Open Volute's settings to install it in one click.");
+    }
+}
+
+// The mixer at the tray: the master, one line per app, the microphone. It closes when it loses
+// focus, and on Escape.
+export component Flyout inherits Window {
+    callback dismiss();
+    // The height its rows ask for: a flyout that must change height is opened again
+    // (refit_flyout in ui.rs).
+    out property <length> wanted-height: layout.preferred-height;
+
+    // 0 follows the system, 1 dark, 2 light.
+    public function set-scheme(scheme: int) {
+        Palette.color-scheme = scheme == 1 ? ColorScheme.dark : scheme == 2 ? ColorScheme.light : ColorScheme.unknown;
+    }
+
+    title: "Volute";
+    icon: @image-url("../../../assets/brand/png/volute-app-icon-64.png");
+    no-frame: true;
+    always-on-top: true;
+    width: 360px;
+    height: layout.preferred-height;
+    background: Theme.background;
+    default-font-size: Theme.font-body;
+    default-font-family: Theme.font-family;
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.dismiss();
+                return accept;
+            }
+            reject
+        }
+    layout := VerticalLayout {
+        if Updates.state == 3 || Updates.state == 7: UpdateBanner { }
+        Rectangle {
+            background: Theme.surface;
+            Master {
+                ring-color: Theme.surface;
+            }
+        }
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+        }
+        AppList {
+            limit: 432px;
+        }
+        Footer { }
+    }
+    }
+
+    init => { keys.focus(); }
+
+    Rectangle {
+        border-width: 1px;
+        border-color: Theme.line;
+    }
+}
+
+// One place in the rail.
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <string> glyph;
+    in property <bool> selected;
+    callback clicked();
+    height: 36px;
+    border-radius: Theme.radius-control;
+    background: root.selected ? Theme.raised : touch.has-hover ? Theme.hover : transparent;
+    accessible-role: tab;
+    accessible-label: root.label;
+    accessible-checked: root.selected;
+    accessible-action-default => { root.clicked(); }
+    HorizontalLayout {
+        padding-left: Theme.space-3;
+        padding-right: Theme.space-3;
+        spacing: Theme.space-3;
+        Glyph {
+            y: (parent.height - self.height) / 2;
+            name: root.glyph;
+            width: 18px;
+            height: 18px;
+            color: root.selected ? Theme.accent-text : Theme.text-muted;
+        }
+        Text {
+            text: root.label;
+            color: root.selected ? Theme.text : Theme.text-muted;
+            font-size: Theme.font-body;
+            font-weight: root.selected ? Theme.weight-strong : Theme.weight-medium;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+    Activator {
+        radius: Theme.radius-control;
+        activated => { root.clicked(); }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A view's heading in the main window.
+component Heading inherits VerticalLayout {
+    in property <string> title;
+    in property <string> detail;
+    spacing: 2px;
+    padding-bottom: Theme.space-4;
+    Text {
+        text: root.title;
+        color: Theme.text;
+        font-size: Theme.font-title;
+        font-weight: Theme.weight-strong;
+    }
+    if root.detail != "": Text {
+        text: root.detail;
+        color: Theme.text-muted;
+        wrap: word-wrap;
+    }
+}
+
+// The main window: a rail, then the mixer, the devices, settings or About.
+export component AppWindow inherits Window {
+    in-out property <int> tab;
+    // Bumped when the window comes back from minimised: Slint 1.18's software renderer redraws
+    // only what changed, and the restored window's buffer is empty, so the whole window must
+    // count as changed (docs/audits/2026-10-25-performance.md, finding 2).
+    in property <int> repaint;
+
+    // 0 follows the system, 1 dark, 2 light.
+    public function set-scheme(scheme: int) {
+        Palette.color-scheme = scheme == 1 ? ColorScheme.dark : scheme == 2 ? ColorScheme.light : ColorScheme.unknown;
+    }
+
+    title: "Volute";
+    icon: @image-url("../../../assets/brand/png/volute-app-icon-64.png");
+    preferred-width: 780px;
+    preferred-height: 600px;
+    min-width: 560px;
+    min-height: 420px;
+    background: root.repaint >= 0 ? Theme.background : Theme.background;
+    default-font-size: Theme.font-body;
+    default-font-family: Theme.font-family;
+
+    HorizontalLayout {
+        // The rail
+        Rectangle {
+            width: 200px;
+            background: Theme.surface;
+            VerticalLayout {
+                padding: Theme.space-3;
+                padding-top: Theme.space-5;
+                spacing: 2px;
+                HorizontalLayout {
+                    padding-left: Theme.space-3;
+                    padding-bottom: Theme.space-5;
+                    Image {
+                        source: Theme.dark
+                            ? @image-url("../../../assets/brand/png/volute-horizontal-reversed-ui.png")
+                            : @image-url("../../../assets/brand/png/volute-horizontal-ui.png");
+                        width: 112px;
+                        height: 26px;
+                        image-fit: contain;
+                        horizontal-alignment: left;
+                    }
+                }
+                NavItem {
+                    label: @tr("Mixer");
+                    glyph: "mixer";
+                    selected: root.tab == 0;
+                    clicked => { root.tab = 0; }
+                }
+                NavItem {
+                    label: @tr("Devices");
+                    glyph: "devices";
+                    selected: root.tab == 1;
+                    clicked => { root.tab = 1; }
+                }
+                NavItem {
+                    label: @tr("Settings");
+                    glyph: "settings";
+                    selected: root.tab == 2;
+                    clicked => { root.tab = 2; }
+                }
+                Rectangle { vertical-stretch: 1; }
+                // An update waiting: said in the rail too, where it is seen from any view.
+                if Updates.state == 3: Rectangle {
+                    height: update-text.preferred-height + 2 * Theme.space-3;
+                    border-radius: Theme.radius-control;
+                    background: Theme.accent-soft;
+                    update-text := Text {
+                        x: Theme.space-3;
+                        width: parent.width - 2 * Theme.space-3;
+                        text: UpdateText.status(Updates.state, Updates.version, Updates.mode);
+                        color: Theme.accent-text;
+                        font-size: Theme.font-caption;
+                        font-weight: Theme.weight-strong;
+                        wrap: word-wrap;
+                    }
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.tab = 2; }
+                    }
+                }
+                NavItem {
+                    label: @tr("About");
+                    glyph: "about";
+                    selected: root.tab == 3;
+                    clicked => { root.tab = 3; }
+                }
+            }
+        }
+
+        // The view
+        if root.tab == 0: VerticalLayout {
+            horizontal-stretch: 1;
+            padding: Theme.space-6;
+            padding-bottom: 0px;
+            Heading {
+                title: @tr("Mixer");
+            }
+            Rectangle {
+                border-radius: Theme.radius-card;
+                background: Theme.surface;
+                Master {
+                    pad: Theme.space-5;
+                    figure-size: 34px;
+                    ring-color: Theme.surface;
+                }
+            }
+            HorizontalLayout {
+                padding-top: Theme.space-6;
+                padding-bottom: Theme.space-1;
+                SectionTitle {
+                    text: @tr("Apps");
+                }
+            }
+            // The list fills the window and scrolls: no height of its own to cap the window.
+            Rectangle {
+                vertical-stretch: 1;
+                AppList {
+                    width: parent.width;
+                    height: parent.height;
+                    inset: 0px;
+                    pad: Theme.space-2;
+                }
+            }
+            Footer {
+                show-open: false;
+            }
+        }
+
+        if root.tab == 1: Flickable {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                padding: Theme.space-6;
+                alignment: start;
+                Heading {
+                    title: @tr("Devices");
+                }
+                DevicesPanel { }
+            }
+        }
+
+        if root.tab == 2: Flickable {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                padding: Theme.space-6;
+                alignment: start;
+                Heading {
+                    title: @tr("Settings");
+                }
+                SettingsPanel { }
+            }
+        }
+
+        if root.tab == 3: Flickable {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                padding: Theme.space-6;
+                alignment: start;
+                AboutPanel { }
+            }
+        }
+    }
+}

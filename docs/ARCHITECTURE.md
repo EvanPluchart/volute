@@ -30,8 +30,8 @@ pub trait Audio: Send {
     fn sessions(&mut self, device: &DeviceId, out: &mut Vec<Session>) -> Result<()>;
     /// Peak levels (0.0 to 1.0) of the given sessions and devices. Called only while a meter is shown.
     fn peaks(&mut self, ids: &[MeterId], out: &mut Vec<f32>) -> Result<()>;
-    fn set_volume(&mut self, target: Target, volume: f32) -> Result<()>;
-    fn set_mute(&mut self, target: Target, muted: bool) -> Result<()>;
+    fn set_volume(&mut self, target: &Target, volume: f32) -> Result<()>;
+    fn set_mute(&mut self, target: &Target, muted: bool) -> Result<()>;
     fn set_default_device(&mut self, device: &DeviceId, role: Role) -> Result<()>;
 }
 ```
@@ -51,7 +51,7 @@ pub trait Audio: Send {
   * A session is keyed by its session instance identifier.
   * An app is keyed by its executable path, not its PID: a browser has many processes, and a game restarts with a new PID.
   * Remembered volumes are per app.
-* **The default output device** is set through `IPolicyConfig`, an undocumented interface every mixer uses. **Per-app output devices** use `IAudioPolicyConfigFactory`, also undocumented, behind a feature that degrades gracefully. Decision 0002 records both.
+* **The default output device** is set through `IPolicyConfig`, an undocumented interface every mixer uses, for all three roles (console, multimedia, communications) at once, as EarTrumpet does: one click moves every sound. **Per-app output devices** use `IAudioPolicyConfigFactory`, also undocumented, behind a feature that degrades gracefully. Decision 0002 records both.
 * **A mock backend** (`MockAudio`) implements the trait for tests and screenshots: scripted devices, sessions and peaks. Tests never change the volume of a real app.
 
 ### volute-core: the model
@@ -73,7 +73,7 @@ pub trait Audio: Send {
 * Slint, every view in `ui/*.slint`, every token in `ui/theme.slint` (from `docs/BRAND.md`). Volute draws its own controls (sliders, meters, switches, menus): native widgets do not match the art direction.
 * **Windows:**
   * the **mixer flyout**, compact, opened from the tray or a shortcut, closing when it loses focus;
-  * the **main window**, with Mixer, Devices, Profiles and Settings;
+  * the **main window**: a rail with Mixer, Devices, Settings and About (Profiles come in M3);
   * the **OSD**, a borderless, topmost window that never takes focus.
 * The audio thread sends frames with `slint::invoke_from_event_loop`, at most one in flight. Models are patched (`set_row_data`, inserts, removals), never replaced.
 
@@ -84,7 +84,9 @@ pub trait Audio: Send {
 | UI (main) | Slint windows | Renders, patches models, sends commands |
 | audio | the `Audio` backend (COM, MTA) | Applies commands, turns COM events into model updates, reads peaks while a meter shows |
 | hook | the `WH_KEYBOARD_LL` hook and its message loop | Filters volume keys and shortcuts, posts them, returns immediately |
-| tray | the tray window and its message loop | Tray clicks, scroll, menu |
+| tray | the tray window and its message loop | Tray clicks, scroll, menu, notifications |
+| update | nothing but its timer | One HTTPS request at start (3 s) and every 6 hours; parks in between (decision 0005). Never joined: it holds nothing |
+| download | the update's files while they download | Fetches, verifies the signature and the checksum, hands the held installer to the UI thread, ends |
 | COM callbacks | Windows' | Push events into the audio thread's channel; nothing else |
 
 * Commands go UI → audio over a `flume` channel. Events and frames go back through `invoke_from_event_loop`.
@@ -99,16 +101,18 @@ pub trait Audio: Send {
 | State | CPU (one core) | Private memory |
 |---|---|---|
 | Idle in the tray, nothing shown | < 0.1 % | < 25 MB |
-| Mixer open, meters running | < 2 % | < 40 MB |
+| Mixer open, meters running | < 4 % (target 2 %, see below) | < 40 MB |
 | OSD showing | < 1 % for its 1.5 s | — |
 
 * Meters read peaks at 30 Hz only while a meter is visible. Nothing ticks when nothing is shown.
 * From a key press to the volume being applied: under 16 ms. The OSD appears in the next frame.
-* `cargo xtask bench-overhead` measures the idle and open states; CI runs it without failing the build (shared runners are noisy), and a release checks it.
+* **The open state is allowed 4 % for now.** With Slint 1.18 on winit and the software renderer, every meter update renders twice, whatever the window holds (measured in M0: 2.6 to 3.4 %). After the redesign (2026-10-25), on the mock, the worst case where every row moves every frame: 3.0 % with the main window open, 2.95 % with the flyout, 0.000 % and 3.5 MB idle (`docs/audits/2026-10-25-performance.md`).
+* **A window must not grow on screen.** Slint 1.18 redraws only what changed, so a part of a window that was off screen, or uncovered by a resize the renderer did not see, stays blank. The main window is sized before it shows; a flyout whose rows change its height is opened again at the new height.
+* `cargo xtask bench-overhead` measures the idle and open states, run by hand on an idle machine; a release checks it.
 
 ## Conventions
 
 * `cargo clippy -- -D warnings` clean; `unsafe` only in `volute-audio` and `volute-shell`, each block with a `// SAFETY:` comment.
 * Settings and profiles are plain text in `%APPDATA%\Volute`, written atomically.
-* Test flags reach any state without clicking. `--no-settings` touches no file and takes no single instance. `--no-hook` installs no keyboard hook. `--no-update-check` goes offline. Tests and CI use all three.
+* Test flags reach any state without clicking. `--no-settings` touches no file and takes no single instance. `--no-hook` installs no keyboard hook. `--no-update-check` goes offline. `--mock` runs on `MockAudio`, so no real app is touched. Tests use them all.
 * Errors reach the user as a short message in the UI, never a silent failure. Logs go to stderr; nothing is written to disk except settings.

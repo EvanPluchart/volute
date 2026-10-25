@@ -1,0 +1,616 @@
+// The mixer's data and its views, shared by the flyout and the main window. Rust patches the
+// models of the `Mixer` global; the views only read them and report what the hand does.
+
+import { Theme } from "theme.slint";
+import { Activator, AppIcon, Button, Fader, Glyph, GlyphButton, Meter, MicGlyph, SpeakerGlyph } from "controls.slint";
+
+export struct AppRow {
+    key: string,
+    name: string,
+    // The name's first letter, for apps without an icon.
+    initial: string,
+    system: bool,
+    // Slider position, 0 to 1.
+    volume: float,
+    muted: bool,
+    playing: bool,
+    // Index into Mixer.icons, or -1.
+    icon: int,
+}
+
+export struct DeviceRow {
+    id: string,
+    name: string,
+    output: bool,
+    // The endpoint scalar, 0 to 1.
+    volume: float,
+    muted: bool,
+    default: bool,
+}
+
+export global Mixer {
+    in property <[AppRow]> rows;
+    in property <[float]> levels;
+    in property <[image]> icons;
+    in property <[DeviceRow]> outputs;
+    in property <[DeviceRow]> inputs;
+    in-out property <DeviceRow> master;
+    in property <bool> has-master;
+    in property <float> master-level;
+    in property <DeviceRow> mic;
+    in property <bool> has-mic;
+    in property <float> mic-level;
+    // An error to show, empty when all is well.
+    in property <string> error;
+    // A command that failed, shown for a moment; empty when there is none.
+    in property <string> notice;
+    // The first rows have arrived (until then, "no app" would be a lie).
+    in property <bool> loaded;
+
+    callback volume-changed(string, float);
+    callback volume-released(string, float);
+    callback mute-toggled(string, bool);
+    callback device-volume-changed(string, float);
+    callback device-volume-released(string, float);
+    callback device-mute-toggled(string, bool);
+    callback default-picked(string);
+    callback open-main();
+}
+
+// A figure from 0 to 100, right-aligned, in a fixed width so faders line up.
+export component Figure inherits Text {
+    in property <float> value;
+    text: Math.round(self.value * 100);
+    horizontal-alignment: right;
+    vertical-alignment: center;
+    width: 32px;
+    font-size: Theme.font-figure;
+    font-weight: Theme.weight-medium;
+}
+
+// The outputs to switch to, as a list under the master: the default one checked.
+component OutputPicker inherits VerticalLayout {
+    callback picked();
+    spacing: 2px;
+    for device in Mixer.outputs: Rectangle {
+        height: 36px;
+        border-radius: Theme.radius-control;
+        background: line.has-hover ? Theme.hover : transparent;
+        accessible-role: button;
+        accessible-label: device.name;
+        accessible-checked: device.default;
+        accessible-action-default => {
+            Mixer.default-picked(device.id);
+            root.picked();
+        }
+        HorizontalLayout {
+            padding-left: Theme.space-2;
+            padding-right: Theme.space-2;
+            spacing: Theme.space-2;
+            SpeakerGlyph {
+                y: (parent.height - self.height) / 2;
+                width: 18px;
+                height: 18px;
+                color: device.default ? Theme.text : Theme.text-faint;
+                muted: device.muted;
+            }
+            Text {
+                text: device.name;
+                color: device.default ? Theme.text : Theme.text-muted;
+                font-weight: device.default ? Theme.weight-strong : Theme.weight-regular;
+                overflow: elide;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            if device.default: Glyph {
+                y: (parent.height - self.height) / 2;
+                name: "check";
+                width: 18px;
+                height: 18px;
+                color: Theme.accent-text;
+            }
+        }
+        Activator {
+            radius: Theme.radius-control;
+            activated => { Mixer.default-picked(device.id); root.picked(); }
+        }
+        line := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                Mixer.default-picked(device.id);
+                root.picked();
+            }
+        }
+    }
+}
+
+// The master output: its name (a click lists the outputs to switch to), a mute button, a large
+// figure and a weightier fader.
+export component Master inherits VerticalLayout {
+    in property <length> pad: Theme.space-4;
+    in property <length> figure-size: Theme.font-master;
+    // The surface under it, cut around the fader's thumb.
+    in property <color> ring-color: Theme.thumb-ring;
+    property <bool> picking;
+    padding-left: root.pad;
+    padding-right: root.pad;
+    padding-top: root.pad - 4px;
+    padding-bottom: root.pad - 6px;
+    spacing: 2px;
+
+    HorizontalLayout {
+        spacing: Theme.space-1;
+        GlyphButton {
+            y: (parent.height - self.height) / 2;
+            label: Mixer.master.muted ? @tr("Unmute") : @tr("Mute");
+            clicked => { Mixer.device-mute-toggled(Mixer.master.id, !Mixer.master.muted); }
+            SpeakerGlyph {
+                color: Mixer.master.muted ? Theme.danger : Theme.text;
+                muted: Mixer.master.muted;
+            }
+        }
+        // The output's name, which opens the list of outputs.
+        Rectangle {
+            height: 32px;
+            y: (parent.height - self.height) / 2;
+            horizontal-stretch: 1;
+            border-radius: Theme.radius-control;
+            background: pick.has-hover || root.picking ? Theme.hover : transparent;
+            accessible-role: combobox;
+            accessible-label: @tr("Output device");
+            accessible-value: Mixer.master.name;
+            accessible-action-default => { root.picking = !root.picking; }
+            HorizontalLayout {
+                padding-left: Theme.space-2;
+                padding-right: Theme.space-1;
+                spacing: Theme.space-1;
+                Text {
+                    text: Mixer.has-master ? Mixer.master.name : @tr("No output");
+                    color: Theme.text-muted;
+                    font-size: Theme.font-body;
+                    font-weight: Theme.weight-medium;
+                    overflow: elide;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Glyph {
+                    y: (parent.height - self.height) / 2;
+                    name: root.picking ? "chevron-up" : "chevron-down";
+                    width: 16px;
+                    height: 16px;
+                    color: Theme.text-muted;
+                }
+            }
+            Activator {
+                radius: Theme.radius-control;
+                activated => { root.picking = !root.picking; }
+            }
+            pick := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.picking = !root.picking; }
+            }
+        }
+        Rectangle {
+            width: Theme.space-3;
+        }
+        Text {
+            text: Math.round(Mixer.master.volume * 100);
+            color: Mixer.master.muted ? Theme.text-faint : Theme.text;
+            font-size: root.figure-size;
+            font-weight: Theme.weight-strong;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            min-width: 52px;
+        }
+    }
+
+    if !root.picking: Fader {
+        height: 32px;
+        track: 6px;
+        knob: 18px;
+        value <=> Mixer.master.volume;
+        level: Mixer.master-level;
+        muted: Mixer.master.muted;
+        fill-color: Theme.fill-strong;
+        ring-color: root.ring-color;
+        changed(v) => { Mixer.device-volume-changed(Mixer.master.id, v); }
+        released(v) => { Mixer.device-volume-released(Mixer.master.id, v); }
+    }
+
+    if root.picking: OutputPicker {
+        padding-top: Theme.space-1;
+        padding-bottom: Theme.space-2;
+        picked => { root.picking = false; }
+    }
+}
+
+// One app: its icon (a click mutes it), its name and figure, its fader with the live level.
+export component AppLine inherits Rectangle {
+    in-out property <AppRow> app;
+    in property <float> level;
+    in property <length> pad: Theme.space-2;
+    height: 54px;
+    border-radius: Theme.radius-row;
+    background: hover.has-hover ? Theme.hover : transparent;
+
+    // Wraps the row so it keeps its hover while the icon or the fader has the pointer.
+    hover := TouchArea {
+    HorizontalLayout {
+        padding-left: root.pad;
+        padding-right: root.pad + Theme.space-1;
+        spacing: Theme.space-2;
+        AppIcon {
+            y: (parent.height - self.height) / 2;
+            icon: root.app.icon >= 0 ? Mixer.icons[root.app.icon] : @image-url("");
+            has-icon: root.app.icon >= 0;
+            initial: root.app.initial;
+            system: root.app.system;
+            muted: root.app.muted;
+            name: root.app.system ? @tr("System sounds") : root.app.name;
+            toggled => { Mixer.mute-toggled(root.app.key, !root.app.muted); }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 0px;
+            HorizontalLayout {
+                height: 18px;
+                padding-left: 7px;
+                spacing: Theme.space-2;
+                Text {
+                    text: root.app.system ? @tr("System sounds") : root.app.name;
+                    color: root.app.muted ? Theme.text-faint : root.app.playing ? Theme.text : Theme.text-muted;
+                    font-size: Theme.font-body;
+                    font-weight: Theme.weight-medium;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Figure {
+                    value: root.app.volume;
+                    color: Theme.text-faint;
+                }
+            }
+            Fader {
+                height: 24px;
+                value <=> root.app.volume;
+                level: root.level;
+                muted: root.app.muted;
+                ring-color: hover.has-hover ? Theme.hover : Theme.thumb-ring;
+                changed(v) => { Mixer.volume-changed(root.app.key, v); }
+                released(v) => { Mixer.volume-released(root.app.key, v); }
+            }
+        }
+    }
+    }
+}
+
+// The microphone in a footer: mute, its name and level; and the way to the main window.
+export component Footer inherits Rectangle {
+    in property <bool> show-open: true;
+    height: 48px;
+
+    Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.line;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.space-2;
+        padding-right: Theme.space-3;
+        spacing: Theme.space-1;
+        if Mixer.has-mic: GlyphButton {
+            y: (parent.height - self.height) / 2;
+            label: Mixer.mic.muted ? @tr("Unmute the microphone") : @tr("Mute the microphone");
+            clicked => { Mixer.device-mute-toggled(Mixer.mic.id, !Mixer.mic.muted); }
+            MicGlyph {
+                color: Mixer.mic.muted ? Theme.danger : Theme.text-muted;
+                muted: Mixer.mic.muted;
+            }
+        }
+        if Mixer.has-mic: VerticalLayout {
+            alignment: center;
+            spacing: 5px;
+            horizontal-stretch: 1;
+            Text {
+                text: Mixer.mic.name;
+                color: Mixer.mic.muted ? Theme.text-faint : Theme.text-muted;
+                font-size: Theme.font-caption;
+                overflow: elide;
+            }
+            // Out of the layout, so its width never limits the footer's.
+            Rectangle {
+                height: 3px;
+                Meter {
+                    x: 0;
+                    width: Math.min(parent.width, 120px);
+                    height: 3px;
+                    level: Mixer.mic-level;
+                    muted: Mixer.mic.muted;
+                }
+            }
+        }
+        if !Mixer.has-mic: Rectangle {
+            horizontal-stretch: 1;
+        }
+        if root.show-open: Rectangle {
+            width: open-row.preferred-width;
+            height: 30px;
+            y: (parent.height - self.height) / 2;
+            border-radius: Theme.radius-control;
+            background: open.has-hover ? Theme.raised : transparent;
+            accessible-role: button;
+            accessible-label: @tr("Open Volute");
+            accessible-action-default => { Mixer.open-main(); }
+            open-row := HorizontalLayout {
+                padding-left: Theme.space-2;
+                padding-right: Theme.space-2;
+                spacing: 6px;
+                Text {
+                    text: @tr("Open Volute");
+                    color: Theme.text-muted;
+                    font-size: Theme.font-caption;
+                    font-weight: Theme.weight-medium;
+                    vertical-alignment: center;
+                }
+                Glyph {
+                    y: (parent.height - self.height) / 2;
+                    name: "arrow-up-right";
+                    width: 14px;
+                    height: 14px;
+                    color: Theme.text-muted;
+                }
+            }
+            Activator {
+                radius: Theme.radius-control;
+                activated => { Mixer.open-main(); }
+            }
+            open := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Mixer.open-main(); }
+            }
+        }
+    }
+}
+
+// The apps, one line each, scrolling past `limit`.
+export component AppList inherits Rectangle {
+    in property <length> limit: 420px;
+    in property <length> pad: Theme.space-2;
+    in property <length> inset: Theme.space-2;
+    property <length> content: Math.max(Mixer.rows.length, 1) * 54px + 2 * root.inset;
+    height: Math.min(self.content, self.limit);
+
+    if Mixer.error != "": Text {
+        x: Theme.space-4;
+        width: parent.width - 2 * Theme.space-4;
+        text: @tr("Audio is unavailable: {}", Mixer.error);
+        color: Theme.danger;
+        wrap: word-wrap;
+        vertical-alignment: center;
+    }
+
+    if Mixer.error == "" && Mixer.loaded && Mixer.rows.length == 0: Text {
+        text: @tr("No app is playing sound.");
+        color: Theme.text-faint;
+    }
+
+    Flickable {
+        content-height: root.content;
+        VerticalLayout {
+            padding: root.inset;
+            alignment: start;
+            for row[i] in Mixer.rows: AppLine {
+                app <=> row;
+                level: Mixer.levels[i];
+                pad: root.pad;
+            }
+        }
+    }
+
+    // A command that failed, for a moment, over the bottom of the list.
+    if Mixer.notice != "": Rectangle {
+        x: Theme.space-3;
+        y: parent.height - self.height - Theme.space-2;
+        width: parent.width - 2 * Theme.space-3;
+        height: notice-text.preferred-height + 2 * Theme.space-2 + 2px;
+        border-radius: Theme.radius-control;
+        background: Theme.raised;
+        clip: true;
+        Rectangle {
+            x: 0;
+            width: 3px;
+            background: Theme.danger;
+        }
+        notice-text := Text {
+            x: Theme.space-3 + 3px;
+            width: parent.width - 2 * Theme.space-3 - 3px;
+            text: Mixer.notice;
+            color: Theme.text;
+            font-size: Theme.font-caption;
+            wrap: word-wrap;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// A heading over a group of rows.
+export component SectionTitle inherits Text {
+    color: Theme.text-faint;
+    font-size: Theme.font-caption;
+    font-weight: Theme.weight-strong;
+}
+
+// Outputs and inputs, for the main window's Devices view.
+export component DevicesPanel inherits VerticalLayout {
+    spacing: Theme.space-2;
+    alignment: start;
+
+    SectionTitle {
+        text: @tr("Outputs");
+    }
+    Rectangle {
+        border-radius: Theme.radius-card;
+        background: Theme.surface;
+        VerticalLayout {
+            padding: Theme.space-2;
+            spacing: 2px;
+            for device in Mixer.outputs: Rectangle {
+                height: 62px;
+                border-radius: Theme.radius-row;
+                background: row-hover.has-hover ? Theme.hover : transparent;
+                row-hover := TouchArea {
+                HorizontalLayout {
+                    padding-left: Theme.space-1;
+                    padding-right: Theme.space-3;
+                    spacing: Theme.space-2;
+                    GlyphButton {
+                        y: (parent.height - self.height) / 2;
+                        label: device.muted ? @tr("Unmute") : @tr("Mute");
+                        clicked => { Mixer.device-mute-toggled(device.id, !device.muted); }
+                        SpeakerGlyph {
+                            color: device.muted ? Theme.danger : Theme.text;
+                            muted: device.muted;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 0px;
+                        HorizontalLayout {
+                            height: 22px;
+                            padding-left: 7px;
+                            spacing: Theme.space-2;
+                            Text {
+                                text: device.name;
+                                color: Theme.text;
+                                font-weight: Theme.weight-medium;
+                                overflow: elide;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            if device.default: Rectangle {
+                                height: 20px;
+                                width: badge.preferred-width + 2 * Theme.space-2;
+                                border-radius: 10px;
+                                background: Theme.accent-soft;
+                                badge := Text {
+                                    text: @tr("Default");
+                                    color: Theme.accent-text;
+                                    font-size: 11px;
+                                    font-weight: Theme.weight-strong;
+                                }
+                            }
+                            if !device.default: Rectangle {
+                                height: 22px;
+                                width: make.preferred-width + 2 * Theme.space-2;
+                                border-radius: 11px;
+                                background: make-touch.has-hover ? Theme.raised : transparent;
+                                border-width: 1px;
+                                border-color: row-hover.has-hover || make-touch.has-hover ? Theme.line : transparent;
+                                accessible-role: button;
+                                accessible-label: @tr("Make default");
+                                accessible-action-default => { Mixer.default-picked(device.id); }
+                                make := Text {
+                                    text: @tr("Make default");
+                                    color: Theme.text-muted;
+                                    font-size: 11px;
+                                    font-weight: Theme.weight-medium;
+                                }
+                                Activator {
+                                    radius: 11px;
+                                    activated => { Mixer.default-picked(device.id); }
+                                }
+                                make-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { Mixer.default-picked(device.id); }
+                                }
+                            }
+                            Figure {
+                                value: device.volume;
+                                color: Theme.text-faint;
+                            }
+                        }
+                        Fader {
+                            value <=> device.volume;
+                            muted: device.muted;
+                            level: device.default ? Mixer.master-level : 0;
+                            ring-color: row-hover.has-hover ? Theme.hover : Theme.surface;
+                            changed(v) => { Mixer.device-volume-changed(device.id, v); }
+                            released(v) => { Mixer.device-volume-released(device.id, v); }
+                        }
+                    }
+                }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        height: Theme.space-3;
+    }
+    SectionTitle {
+        text: @tr("Inputs");
+    }
+    Rectangle {
+        border-radius: Theme.radius-card;
+        background: Theme.surface;
+        VerticalLayout {
+            padding: Theme.space-2;
+            spacing: 2px;
+            for device in Mixer.inputs: Rectangle {
+                height: 52px;
+                HorizontalLayout {
+                    padding-left: Theme.space-1;
+                    padding-right: Theme.space-3;
+                    spacing: Theme.space-2;
+                    GlyphButton {
+                        y: (parent.height - self.height) / 2;
+                        label: device.muted ? @tr("Unmute") : @tr("Mute");
+                        clicked => { Mixer.device-mute-toggled(device.id, !device.muted); }
+                        MicGlyph {
+                            color: device.muted ? Theme.danger : Theme.text;
+                            muted: device.muted;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        padding-left: 7px;
+                        HorizontalLayout {
+                            spacing: Theme.space-2;
+                            Text {
+                                text: device.name;
+                                color: Theme.text;
+                                font-weight: Theme.weight-medium;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            if device.default: Text {
+                                text: @tr("Default");
+                                color: Theme.text-faint;
+                                font-size: 11px;
+                                font-weight: Theme.weight-strong;
+                            }
+                        }
+                        Meter {
+                            level: device.default ? Mixer.mic-level : 0;
+                            muted: device.muted;
+                        }
+                    }
+                }
+            }
+            if Mixer.inputs.length == 0: Text {
+                height: 44px;
+                text: @tr("No microphone.");
+                color: Theme.text-faint;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+    Text {
+        text: @tr("A microphone shows its level while an app is using it.");
+        color: Theme.text-faint;
+        font-size: Theme.font-caption;
+        wrap: word-wrap;
+    }
+}

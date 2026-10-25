@@ -1,0 +1,31 @@
+[package]
+name = "volute-audio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Volute's sound system: Windows Core Audio behind one trait, and a mock (decision 0002)"
+
+[[bin]]
+# Plays a quiet tone in a session of its own, for the owned-session test. Never shipped.
+name = "volute-tone"
+path = "src/bin/volute-tone.rs"
+test = false
+
+[dependencies]
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-core.workspace = true
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_Shell_PropertiesSystem",
+] }

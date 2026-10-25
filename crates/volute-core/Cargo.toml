@@ -1,0 +1,11 @@
+[package]
+name = "volute-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Volute's mixer model: sessions grouped by app, the volume curve, settings (no UI, no OS calls)"
+
+[dependencies]
+volute-audio.workspace = true
