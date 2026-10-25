@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 
 const USAGE: &str = "usage: cargo xtask check
-       cargo xtask bench-overhead [--seconds=N] [--check] [--real]";
+       cargo xtask bench-overhead [--seconds=N] [--check] [--real]
+       cargo xtask dist";
 const WARM_UP: Duration = Duration::from_secs(5);
 
 /// The performance budget from docs/ARCHITECTURE.md, per state: CPU of one core, private MB.
@@ -21,6 +22,7 @@ fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("check") => check(),
+        Some("dist") => dist(),
         Some("bench-overhead") => {
             let mut seconds = 60;
             let mut check = false;
@@ -50,6 +52,106 @@ fn workspace_root() -> PathBuf {
         .parent()
         .expect("xtask lives in the workspace")
         .to_path_buf()
+}
+
+/// The workspace version, from the root `Cargo.toml`.
+fn version(root: &Path) -> Result<String> {
+    let manifest = std::fs::read_to_string(root.join("Cargo.toml"))?;
+    manifest
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("version = \"")?.strip_suffix('"'))
+        .map(str::to_owned)
+        .context("no version in Cargo.toml")
+}
+
+/// Builds the release into `dist/` (decisions 0005 and 0006): the Inno Setup installer, a
+/// portable zip, and `SHA256SUMS` for both, which the updater checks before running anything.
+/// Nothing is uploaded: the author attaches the three files to a draft release.
+fn dist() -> Result<()> {
+    let root = workspace_root();
+    let version = version(&root)?;
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let status = Command::new(cargo)
+        .current_dir(&root)
+        .args(["build", "--release", "--locked", "-p", "volute"])
+        .status()
+        .context("running cargo build")?;
+    if !status.success() {
+        bail!("release build failed");
+    }
+    if !cfg!(windows) {
+        bail!("dist builds the Windows installer, on Windows");
+    }
+    let out = root.join("dist");
+    std::fs::create_dir_all(&out)?;
+    let exe = root.join("target/release/volute.exe");
+    // Inno Setup 6, as winget installs it, or where ISCC says.
+    let iscc = std::env::var_os("ISCC")
+        .map(PathBuf::from)
+        .into_iter()
+        .chain(std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Programs/Inno Setup 6/ISCC.exe")))
+        .chain([PathBuf::from(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe")])
+        .find(|p| p.exists())
+        .context("Inno Setup 6 not found: install it (winget install JRSoftware.InnoSetup), or set ISCC")?;
+    let status = Command::new(&iscc)
+        .current_dir(root.join("packaging/windows"))
+        .arg("/Q")
+        .arg(format!("/DAppVersion={version}"))
+        .arg(format!("/DSourceExe={}", exe.display()))
+        .arg(format!("/DOutputDir={}", out.display()))
+        .arg("volute.iss")
+        .status()
+        .context("running ISCC")?;
+    if !status.success() {
+        bail!("the installer did not build");
+    }
+    // The portable copy: the exe alone runs anywhere; settings stay in %APPDATA%\Volute.
+    let zip_name = format!("Volute-{version}-portable.zip");
+    let zip = out.join(&zip_name);
+    let _ = std::fs::remove_file(&zip);
+    let status = Command::new("tar")
+        .current_dir(exe.parent().context("exe folder")?)
+        .args(["-a", "-c", "-f"])
+        .arg(&zip)
+        .arg("volute.exe")
+        .status()
+        .context("running tar")?;
+    if !status.success() {
+        bail!("the portable zip did not build");
+    }
+    let setup_name = format!("Volute-{version}-setup.exe");
+    // `sha256sum` format, the one volute-core::update reads.
+    let mut sums = String::new();
+    for name in [&setup_name, &zip_name] {
+        let digest = sha256(&std::fs::read(out.join(name))?)?;
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        sums.push_str(&format!("{hex}  {name}\n"));
+    }
+    std::fs::write(out.join("SHA256SUMS"), &sums)?;
+    for name in [setup_name.as_str(), zip_name.as_str(), "SHA256SUMS"] {
+        println!("dist: {}", out.join(name).display());
+    }
+    print!("{sums}");
+    Ok(())
+}
+
+/// SHA-256 through Windows' own BCrypt.
+#[cfg(windows)]
+fn sha256(data: &[u8]) -> Result<[u8; 32]> {
+    use windows_sys::Win32::Security::Cryptography::{BCRYPT_SHA256_ALG_HANDLE, BCryptHash};
+    let mut digest = [0u8; 32];
+    let len = u32::try_from(data.len()).context("file too large")?;
+    // SAFETY: the SHA-256 pseudo-handle; input and output sizes as passed.
+    let status = unsafe { BCryptHash(BCRYPT_SHA256_ALG_HANDLE, std::ptr::null(), 0, data.as_ptr(), len, digest.as_mut_ptr(), 32) };
+    if status != 0 {
+        bail!("BCryptHash failed ({status:#x})");
+    }
+    Ok(digest)
+}
+
+#[cfg(not(windows))]
+fn sha256(_: &[u8]) -> Result<[u8; 32]> {
+    bail!("SHA-256 is computed with Windows' BCrypt")
 }
 
 /// What a CI would run, run here instead (decision 0006): check, test and clippy with warnings

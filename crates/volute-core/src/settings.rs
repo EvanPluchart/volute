@@ -29,11 +29,34 @@ impl Theme {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub theme: Theme,
+    /// Closing the main window leaves Volute in the tray instead of quitting (decision 0009).
+    pub close_to_tray: bool,
+    /// Look for a new release at start and every 6 hours (decision 0005).
+    pub check_updates: bool,
     /// Lines this version does not know, written back as they were.
     unknown: Vec<String>,
+}
+
+impl Default for Settings {
+    fn default() -> Settings {
+        Settings {
+            theme: Theme::System,
+            close_to_tray: false,
+            check_updates: true,
+            unknown: Vec::new(),
+        }
+    }
+}
+
+fn flag(value: &str) -> Option<bool> {
+    match value {
+        "true" | "on" | "1" => Some(true),
+        "false" | "off" | "0" => Some(false),
+        _ => None,
+    }
 }
 
 impl Settings {
@@ -45,11 +68,18 @@ impl Settings {
                 continue;
             }
             let known = trimmed.split_once('=').is_some_and(|(key, value)| {
-                match (key.trim(), value.trim()) {
-                    ("theme", value) => {
-                        if let Some(theme) = Theme::parse(value) {
-                            settings.theme = theme;
-                        }
+                let value = value.trim();
+                match key.trim() {
+                    "theme" => {
+                        settings.theme = Theme::parse(value).unwrap_or(settings.theme);
+                        true
+                    }
+                    "close_to_tray" => {
+                        settings.close_to_tray = flag(value).unwrap_or(settings.close_to_tray);
+                        true
+                    }
+                    "check_updates" => {
+                        settings.check_updates = flag(value).unwrap_or(settings.check_updates);
                         true
                     }
                     _ => false,
@@ -63,7 +93,12 @@ impl Settings {
     }
 
     pub fn to_text(&self) -> String {
-        let mut text = format!("theme = {}\n", self.theme.as_str());
+        let mut text = format!(
+            "theme = {}\nclose_to_tray = {}\ncheck_updates = {}\n",
+            self.theme.as_str(),
+            self.close_to_tray,
+            self.check_updates
+        );
         for line in &self.unknown {
             text.push_str(line);
             text.push('\n');
@@ -78,15 +113,21 @@ mod tests {
 
     #[test]
     fn reads_values_and_keeps_unknown_keys() {
-        let settings = Settings::parse("# comment\ntheme = dark\nfuture = 3\n");
+        let settings = Settings::parse("# comment\ntheme = dark\nclose_to_tray = on\nfuture = 3\n");
         assert_eq!(settings.theme, Theme::Dark);
-        assert_eq!(settings.to_text(), "theme = dark\nfuture = 3\n");
+        assert!(settings.close_to_tray);
+        assert!(settings.check_updates);
+        assert_eq!(
+            settings.to_text(),
+            "theme = dark\nclose_to_tray = true\ncheck_updates = true\nfuture = 3\n"
+        );
         assert_eq!(Settings::parse(&settings.to_text()), settings);
     }
 
     #[test]
     fn bad_values_keep_their_default() {
-        assert_eq!(Settings::parse("theme = purple").theme, Theme::System);
+        let settings = Settings::parse("theme = purple\nclose_to_tray = maybe\ncheck_updates = 2");
+        assert_eq!(settings, Settings { unknown: vec![], ..Settings::default() });
         assert_eq!(Settings::parse("\u{0}garbage").theme, Theme::System);
     }
 }

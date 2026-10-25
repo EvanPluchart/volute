@@ -1,6 +1,7 @@
-//! The UI thread's side: the windows (main, flyout, About), the tray, and the `Mixer` global
-//! they share. Frames from the audio thread are patched into one set of models that both
-//! windows show; what the hand does goes back to the audio thread as commands.
+//! The UI thread's side: the windows (main and flyout), the tray, and the globals they share.
+//! Frames from the audio thread are patched into one set of models that both windows show;
+//! what the hand does goes back to the audio thread as commands. Settings and updates live here
+//! too, since every window shows them.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -9,11 +10,14 @@ use std::time::{Duration, Instant};
 use slint::winit_030::winit::platform::windows::{CornerPreference, WindowExtWindows};
 use slint::winit_030::{EventResult, WinitWindowAccessor};
 use slint::{ComponentHandle, Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, VecModel};
+use volute_core::settings::{Settings, Theme};
 use volute_shell::{Tray, TrayEvent};
 
+use crate::cli::TAB_SETTINGS;
 use crate::mixer::{Command, Frame, Input};
 use crate::model::{self, Held};
-use crate::{AboutWindow, AppRow, AppWindow, DeviceRow, Flyout, Mixer, TrayText};
+use crate::update::{self, Updater};
+use crate::{AppRow, AppWindow, DeviceRow, Flyout, Mixer, Prefs, TrayText, Updates};
 
 /// A tray click right after the flyout closed on focus loss is the same click: it must not
 /// open it again.
@@ -41,10 +45,11 @@ struct Shown {
 struct Ui {
     app: AppWindow,
     flyout: Option<Flyout>,
+    /// Counts flyouts opened: a closing request from an older one leaves a newer one alone.
+    flyout_gen: u64,
     /// Where the flyout was opened from (physical pixels), to keep it there as it grows.
     anchor: (i32, i32),
     closed_at: Option<Instant>,
-    about: Option<AboutWindow>,
     tray: Option<Tray>,
     commands: flume::Sender<Input>,
     models: Models,
@@ -52,6 +57,10 @@ struct Ui {
     shown: Shown,
     /// 0 follows the system, 1 dark, 2 light.
     scheme: i32,
+    /// The settings as the user set them; saved on every change unless this is a test run.
+    settings: Settings,
+    test_run: bool,
+    update: update::View,
     main_visible: bool,
     main_shown_once: bool,
     main_occluded: bool,
@@ -77,8 +86,19 @@ fn send(command: Command) {
     });
 }
 
+/// What `install` needs besides the window.
+pub struct Setup {
+    pub commands: flume::Sender<Input>,
+    /// The theme for this session: the settings', or a test flag's.
+    pub scheme: i32,
+    pub with_tray: bool,
+    pub settings: Settings,
+    pub test_run: bool,
+}
+
 /// Sets up the main window and the tray. The main window is not shown yet.
-pub fn install(app: &AppWindow, commands: flume::Sender<Input>, scheme: i32, with_tray: bool) {
+pub fn install(app: &AppWindow, setup: Setup) {
+    let Setup { commands, scheme, with_tray, settings, test_run } = setup;
     let models = Models {
         rows: Rc::new(VecModel::default()),
         levels: Rc::new(VecModel::default()),
@@ -90,10 +110,19 @@ pub fn install(app: &AppWindow, commands: flume::Sender<Input>, scheme: i32, wit
         app.invoke_set_scheme(scheme);
     }
     bind(&app.global::<Mixer>(), &models);
-    app.on_show_about(show_about);
-    // Closing the main window quits (decision 0004); the flyout is how Volute lives in the tray.
+    bind_prefs(&app.global::<Prefs>(), &settings, scheme, test_run);
+    bind_updates(&app.global::<Updates>());
+    push_update(&app.global::<Updates>(), &update::View { mode: update::mode(), ..update::View::default() });
+    // Closing the main window quits (decision 0004), unless the user keeps Volute in the tray
+    // and the icon is really there (decision 0009).
     app.window().on_close_requested(|| {
-        let _ = slint::quit_event_loop();
+        let keep = with_ui(|ui| ui.settings.close_to_tray && ui.tray.as_ref().is_some_and(Tray::is_shown));
+        if keep == Some(true) {
+            with_ui(|ui| ui.main_visible = false);
+            update_visibility();
+        } else {
+            let _ = slint::quit_event_loop();
+        }
         slint::CloseRequestResponse::HideWindow
     });
     // Minimised or covered: its meters stop.
@@ -111,6 +140,7 @@ pub fn install(app: &AppWindow, commands: flume::Sender<Input>, scheme: i32, wit
             let menu = volute_shell::TrayMenu {
                 open: text.invoke_open().into(),
                 mute: text.invoke_mute().into(),
+                settings: text.invoke_settings().into(),
                 quit: text.invoke_quit().into(),
             };
             Tray::new("Volute", menu, |event| {
@@ -122,15 +152,18 @@ pub fn install(app: &AppWindow, commands: flume::Sender<Input>, scheme: i32, wit
         *ui = Some(Ui {
             app: app.clone_strong(),
             flyout: None,
+            flyout_gen: 0,
             anchor: (0, 0),
             closed_at: None,
-            about: None,
             tray,
             commands,
             models,
             held: Held::default(),
             shown: Shown::default(),
             scheme,
+            settings,
+            test_run,
+            update: update::View { mode: update::mode(), ..update::View::default() },
             main_visible: false,
             main_shown_once: false,
             main_occluded: false,
@@ -282,7 +315,7 @@ pub fn apply(frame: Frame) {
     });
     if reposition == Some(true) {
         // The flyout's height follows its rows: keep it in place once it has been laid out.
-        slint::Timer::single_shot(Duration::ZERO, place_flyout);
+        slint::Timer::single_shot(Duration::ZERO, refit_flyout);
     }
 }
 
@@ -315,7 +348,13 @@ fn update_visibility() {
 
 /// The main window's size the first time it opens, in logical pixels: Slint would otherwise
 /// open it at its minimum.
-const MAIN_SIZE: (f32, f32) = (460.0, 640.0);
+const MAIN_SIZE: (f32, f32) = (780.0, 600.0);
+
+/// Shows the main window on one of its views.
+pub fn show_main_at(tab: i32) {
+    with_ui(|ui| ui.app.set_tab(tab));
+    show_main();
+}
 
 /// Shows the main window and brings it forward.
 pub fn show_main() {
@@ -338,35 +377,11 @@ pub fn show_main() {
     update_visibility();
 }
 
-fn show_about() {
-    let about = with_ui(|ui| {
-        if ui.about.is_none() {
-            ui.about = AboutWindow::new().ok();
-            if let Some(about) = &ui.about
-                && ui.scheme != 0
-            {
-                about.invoke_set_scheme(ui.scheme);
-            }
-        }
-        ui.about.as_ref().map(ComponentHandle::clone_strong)
-    })
-    .flatten();
-    // Shown outside the borrow: showing a window may run handlers that need the UI state.
-    if let Some(about) = about {
-        about.set_version(env!("CARGO_PKG_VERSION").into());
-        let _ = about.show();
-    }
-}
-
-/// Opens the About window at start (`--about`).
-pub fn open_about() {
-    show_about();
-}
-
 fn on_tray_event(event: TrayEvent) {
     match event {
         TrayEvent::Clicked { x, y } => toggle_flyout(x, y),
         TrayEvent::Open => show_main(),
+        TrayEvent::Settings | TrayEvent::NotificationClicked => show_main_at(TAB_SETTINGS),
         TrayEvent::ToggleMute => {
             let master = with_ui(|ui| ui.shown.master.clone()).flatten();
             if let Some(master) = master {
@@ -413,6 +428,11 @@ pub fn show_flyout_for_launch() {
 /// Opens the flyout as a click on the tray at (`x`, `y`) would.
 pub fn open_flyout(x: i32, y: i32) {
     let Ok(flyout) = Flyout::new() else { return };
+    let generation = with_ui(|ui| {
+        ui.flyout_gen += 1;
+        ui.flyout_gen
+    })
+    .unwrap_or_default();
     with_ui(|ui| {
         if ui.scheme != 0 {
             flyout.invoke_set_scheme(ui.scheme);
@@ -420,20 +440,27 @@ pub fn open_flyout(x: i32, y: i32) {
         let m = flyout.global::<Mixer>();
         bind(&m, &ui.models);
         push_shown(&m, &ui.shown);
+        let u = flyout.global::<Updates>();
+        bind_updates(&u);
+        push_update(&u, &ui.update);
         ui.anchor = (x, y);
     });
-    flyout.on_dismiss(close_flyout_later);
+    flyout.on_dismiss(move || close_flyout_later(generation));
     // It closes when it loses focus, like the system's own flyouts.
-    flyout.window().on_winit_window_event(|_, event| {
+    flyout.window().on_winit_window_event(move |_, event| {
         if let slint::winit_030::winit::event::WindowEvent::Focused(false) = event {
-            with_ui(|ui| ui.closed_at = Some(Instant::now()));
-            close_flyout_later();
+            with_ui(|ui| {
+                if ui.flyout_gen == generation {
+                    ui.closed_at = Some(Instant::now());
+                }
+            });
+            close_flyout_later(generation);
         }
         EventResult::Propagate
     });
     // Another program's close request (taskkill): just close the flyout.
-    flyout.window().on_close_requested(|| {
-        close_flyout_later();
+    flyout.window().on_close_requested(move || {
+        close_flyout_later(generation);
         slint::CloseRequestResponse::HideWindow
     });
     let _ = flyout.show();
@@ -458,9 +485,34 @@ fn place_flyout() {
     });
 }
 
-/// Closing from inside the flyout's own event handler: do it once the handler returns.
-fn close_flyout_later() {
-    slint::Timer::single_shot(Duration::ZERO, close_flyout);
+/// The rows changed while the flyout is open. Its height follows them, but a shown window that
+/// grows is not drawn past its old height (Slint 1.18's software renderer on Windows), so a
+/// flyout whose height must change is opened again, at once, where it was.
+fn refit_flyout() {
+    let reopen = with_ui(|ui| {
+        let flyout = ui.flyout.as_ref()?;
+        let window = flyout.window();
+        let drawn = window.size().to_logical(window.scale_factor()).height;
+        ((drawn - flyout.get_wanted_height()).abs() > 0.5).then_some(ui.anchor)
+    })
+    .flatten();
+    match reopen {
+        Some((x, y)) => {
+            close_flyout();
+            open_flyout(x, y);
+        }
+        None => place_flyout(),
+    }
+}
+
+/// Closing from inside the flyout's own event handler: do it once the handler returns, and only
+/// if that flyout is still the one open.
+fn close_flyout_later(generation: u64) {
+    slint::Timer::single_shot(Duration::ZERO, move || {
+        if with_ui(|ui| ui.flyout_gen == generation).unwrap_or(false) {
+            close_flyout();
+        }
+    });
 }
 
 /// Hides and drops the flyout, so its frame buffer is freed.
@@ -470,6 +522,160 @@ pub fn close_flyout() {
         let _ = flyout.hide();
     }
     update_visibility();
+}
+
+/// The Settings view's values and what its controls do.
+fn bind_prefs(p: &Prefs, settings: &Settings, scheme: i32, test_run: bool) {
+    p.set_theme(scheme);
+    p.set_close_to_tray(settings.close_to_tray);
+    p.set_check_updates(settings.check_updates);
+    p.set_start_with_windows(volute_shell::startup::enabled());
+    // A test run changes nothing on the machine, so not what Windows starts at sign-in.
+    p.set_can_change_system(!test_run);
+    p.set_version(env!("CARGO_PKG_VERSION").into());
+    p.on_theme_picked(|scheme| {
+        let theme = match scheme {
+            1 => Theme::Dark,
+            2 => Theme::Light,
+            _ => Theme::System,
+        };
+        change_settings(|s| s.theme = theme);
+        set_scheme(scheme);
+    });
+    p.on_close_to_tray_toggled(|on| change_settings(|s| s.close_to_tray = on));
+    p.on_check_updates_toggled(|on| {
+        change_settings(|s| s.check_updates = on);
+        UPDATER.with_borrow(|u| {
+            if let Some(updater) = u {
+                updater.set_enabled(on);
+            }
+        });
+    });
+    p.on_start_with_windows_toggled(|on| {
+        let Some((test_run, app)) = with_ui(|ui| (ui.test_run, ui.app.clone_strong())) else { return };
+        if !test_run && !volute_shell::startup::set(on) {
+            eprintln!("volute: could not change starting with Windows");
+        }
+        // Whatever happened, show what Windows will do.
+        app.global::<Prefs>().set_start_with_windows(volute_shell::startup::enabled());
+    });
+    p.on_open_link(|which| {
+        let repo = env!("CARGO_PKG_REPOSITORY");
+        let url = match which.as_str() {
+            "notes" => format!("{repo}/releases"),
+            "issues" => format!("{repo}/issues"),
+            "license" => format!("{repo}/blob/main/LICENSE"),
+            _ => repo.to_owned(),
+        };
+        volute_shell::open_url(&url);
+    });
+}
+
+/// Changes the settings and saves them, unless this is a test run.
+fn change_settings(change: impl FnOnce(&mut Settings)) {
+    let save = with_ui(|ui| {
+        change(&mut ui.settings);
+        (!ui.test_run).then(|| ui.settings.to_text())
+    })
+    .flatten();
+    if let Some(text) = save
+        && let Err(err) = volute_shell::settings_file::save(&text)
+    {
+        eprintln!("volute: saving settings: {err}");
+    }
+}
+
+/// Switches every window to a theme: 0 follows the system, 1 dark, 2 light.
+fn set_scheme(scheme: i32) {
+    with_ui(|ui| {
+        ui.scheme = scheme;
+        ui.app.invoke_set_scheme(scheme);
+        if let Some(flyout) = &ui.flyout {
+            flyout.invoke_set_scheme(scheme);
+        }
+    });
+}
+
+/// What the update line's buttons do, in any window.
+fn bind_updates(u: &Updates) {
+    u.on_check_now(|| {
+        UPDATER.with_borrow(|u| {
+            if let Some(updater) = u {
+                updater.check_now();
+            }
+        });
+    });
+    u.on_update(|| {
+        let view = with_ui(|ui| ui.update.clone());
+        // Outside the borrow: the updater sets the state as it starts.
+        let Some(view) = view else { return };
+        let updater = UPDATER.with_borrow(|u| u.clone());
+        if let Some(updater) = updater {
+            updater.update(&view);
+        }
+    });
+    u.on_whats_new(|| {
+        let version = with_ui(|ui| ui.update.version.clone()).unwrap_or_default();
+        if let Some(version) = volute_core::update::Version::parse(&version) {
+            volute_shell::open_url(&volute_core::update::release_page(version));
+        }
+    });
+}
+
+fn push_update(u: &Updates, view: &update::View) {
+    u.set_state(view.state);
+    u.set_version(view.version.as_str().into());
+    u.set_mode(view.mode);
+    u.set_error_kind(view.error_kind);
+    u.set_error(view.error.as_str().into());
+}
+
+thread_local! {
+    /// The updater, shared outside `Ui`'s borrow: starting an update sets the UI state.
+    static UPDATER: RefCell<Option<Rc<Updater>>> = const { RefCell::new(None) };
+}
+
+/// Starts looking for updates (decision 0005): `enabled` is the setting, `current` this
+/// version or the one pretended. `installed`: the installer just started this Volute again.
+pub fn start_updates(enabled: bool, current: String, installed: bool) {
+    if installed {
+        let version = current.clone();
+        set_update(|view| {
+            view.state = update::INSTALLED;
+            view.version = version;
+        });
+    }
+    if update::mode() == update::UNSUPPORTED {
+        return;
+    }
+    let test_run = with_ui(|ui| ui.test_run).unwrap_or(true);
+    if let Some(updater) = update::start(enabled, current, update::FIRST_CHECK, test_run) {
+        UPDATER.with_borrow_mut(|u| *u = Some(Rc::new(updater)));
+    }
+}
+
+/// Changes what the windows show of the updater.
+pub fn set_update(change: impl FnOnce(&mut update::View)) {
+    with_ui(|ui| {
+        let before = ui.update.clone();
+        change(&mut ui.update);
+        if ui.update != before {
+            push_update(&ui.app.global::<Updates>(), &ui.update);
+            if let Some(flyout) = &ui.flyout {
+                push_update(&flyout.global::<Updates>(), &ui.update);
+            }
+        }
+    });
+}
+
+/// A new version, found by a background check: one notification from the tray icon.
+pub fn notify_update(version: &str) {
+    with_ui(|ui| {
+        if let Some(tray) = &ui.tray {
+            let text = ui.app.global::<TrayText>();
+            tray.notify(&text.invoke_update_title(version.into()), &text.invoke_update_body());
+        }
+    });
 }
 
 /// Whole wheel notches (120 each) in `pending + delta`, and what is left over for the next turn.

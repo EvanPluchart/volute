@@ -4,29 +4,17 @@ msgstr ""
 "Language: fr\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
 
-msgid "About Volute"
-msgstr "À propos de Volute"
-
 msgid "Version {}"
 msgstr "Version {}"
 
-msgid "A volume mixer for Windows."
-msgstr "Un mélangeur de volume pour Windows."
-
 msgid "System sounds"
 msgstr "Sons système"
-
-msgid "{}%"
-msgstr "{} %"
 
 msgid "Mute"
 msgstr "Couper"
 
 msgid "Unmute"
 msgstr "Rétablir"
-
-msgid "Volume mixer"
-msgstr "Mélangeur de volume"
 
 msgid "About"
 msgstr "À propos"
@@ -72,3 +60,147 @@ msgstr "{} : {} %"
 
 msgid "Mute all"
 msgstr "Tout couper"
+
+msgid "Settings"
+msgstr "Réglages"
+
+msgid "Volute {} is available"
+msgstr "Volute {} est disponible"
+
+msgid "Open Volute's settings to install it in one click."
+msgstr "Ouvrez les réglages de Volute pour l'installer en un clic."
+
+msgid "Apps"
+msgstr "Apps"
+
+msgid "Unmute {}"
+msgstr "Rétablir {}"
+
+msgid "Mute {}"
+msgstr "Couper {}"
+
+msgid "Output device"
+msgstr "Sortie audio"
+
+msgid "Unmute the microphone"
+msgstr "Rétablir le micro"
+
+msgid "Mute the microphone"
+msgstr "Couper le micro"
+
+msgid "No microphone."
+msgstr "Aucun micro."
+
+msgid "A microphone shows its level while an app is using it."
+msgstr "Un micro affiche son niveau quand une app l'utilise."
+
+msgid "Checking for updates…"
+msgstr "Recherche de mises à jour…"
+
+msgid "Volute is up to date."
+msgstr "Volute est à jour."
+
+msgid "Volute {} is available. Open Volute normally, not as administrator, to install it."
+msgstr "Volute {} est disponible. Ouvrez Volute normalement, pas en administrateur, pour l'installer."
+
+msgid "Volute {} is available."
+msgstr "Volute {} est disponible."
+
+msgid "Downloading Volute {}…"
+msgstr "Téléchargement de Volute {}…"
+
+msgid "Installing Volute {}…"
+msgstr "Installation de Volute {}…"
+
+msgid "Volute {} is installed."
+msgstr "Volute {} est installé."
+
+msgid "Could not reach GitHub to check for updates."
+msgstr "Impossible de joindre GitHub pour chercher une mise à jour."
+
+msgid "The release has no checksum for its installer, so it was not installed."
+msgstr "La version publiée n'a pas d'empreinte pour son installateur : elle n'a pas été installée."
+
+msgid "The download does not match its checksum, so it was not installed."
+msgstr "Le téléchargement ne correspond pas à son empreinte : il n'a pas été installé."
+
+msgid "The download failed."
+msgstr "Le téléchargement a échoué."
+
+msgid "The installer could not be started."
+msgstr "L'installateur n'a pas pu être lancé."
+
+msgid "Test run: the installer was downloaded and checked, not run."
+msgstr "Exécution de test : l'installateur a été téléchargé et vérifié, pas lancé."
+
+msgid "Update"
+msgstr "Mettre à jour"
+
+msgid "Open the release page"
+msgstr "Ouvrir la page de la version"
+
+msgid "See"
+msgstr "Voir"
+
+msgid "What's new"
+msgstr "Nouveautés"
+
+msgid "Appearance"
+msgstr "Apparence"
+
+msgid "Theme"
+msgstr "Thème"
+
+msgid "System"
+msgstr "Système"
+
+msgid "Dark"
+msgstr "Sombre"
+
+msgid "Light"
+msgstr "Clair"
+
+msgid "Behaviour"
+msgstr "Comportement"
+
+msgid "Start with Windows"
+msgstr "Démarrer avec Windows"
+
+msgid "Volute waits in the notification area from the moment you sign in."
+msgstr "Volute vous attend dans la zone de notification dès l'ouverture de session."
+
+msgid "Keep running when the window closes"
+msgstr "Rester ouvert quand la fenêtre se ferme"
+
+msgid "Closing this window leaves Volute in the notification area. Quit from its menu."
+msgstr "Fermer cette fenêtre laisse Volute dans la zone de notification. Quittez depuis son menu."
+
+msgid "Updates"
+msgstr "Mises à jour"
+
+msgid "Check for updates"
+msgstr "Chercher les mises à jour"
+
+msgid "At start and every 6 hours, Volute asks GitHub for the latest version. Nothing else is sent."
+msgstr "Au démarrage puis toutes les 6 heures, Volute demande à GitHub la dernière version. Rien d'autre n'est envoyé."
+
+msgid "Check now"
+msgstr "Vérifier"
+
+msgid "A volume mixer for Windows: every app's volume, every device, from the notification area."
+msgstr "Un mélangeur de volume pour Windows : le volume de chaque app et de chaque périphérique, depuis la zone de notification."
+
+msgid "Volute reads which apps play sound and their names and icons. It never records sound, and sends nothing but its update check to GitHub."
+msgstr "Volute lit quelles apps jouent du son, avec leurs noms et icônes. Il n'enregistre jamais le son et n'envoie rien d'autre que sa vérification de mise à jour à GitHub."
+
+msgid "Source code"
+msgstr "Code source"
+
+msgid "Release notes"
+msgstr "Notes de version"
+
+msgid "Report a problem"
+msgstr "Signaler un problème"
+
+msgid "MIT licence"
+msgstr "Licence MIT"

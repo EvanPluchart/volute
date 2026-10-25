@@ -1,0 +1,351 @@
+// Settings, updates (decision 0005) and About, for the main window; and the update line the
+// flyout shows. Rust owns the values and saves them; these views report what the hand does.
+
+import { AboutSlint } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Button, Link, Segment, Switch } from "controls.slint";
+import { SectionTitle } from "mixer.slint";
+
+export global Prefs {
+    // 0 follows the system, 1 dark, 2 light.
+    in-out property <int> theme;
+    in-out property <bool> close-to-tray;
+    in-out property <bool> start-with-windows;
+    in-out property <bool> check-updates;
+    // A test run never changes the machine: the switches that would are shown but disabled.
+    in property <bool> can-change-system: true;
+    in property <string> version;
+
+    callback theme-picked(int);
+    callback close-to-tray-toggled(bool);
+    callback start-with-windows-toggled(bool);
+    callback check-updates-toggled(bool);
+    // "repo", "notes", "license", "issues"
+    callback open-link(string);
+}
+
+export global Updates {
+    // 0 nothing yet, 1 checking, 2 up to date, 3 available, 4 downloading, 5 failed,
+    // 6 installing, 7 just installed (started again with --updated).
+    in property <int> state;
+    // The version offered, or just installed.
+    in property <string> version;
+    // What "Update" can do here: 0 install, 1 open the release page (a portable copy),
+    // 2 open the release page (running as administrator), 3 nothing (no updater here).
+    in property <int> mode;
+    // Why it failed, worded below: 1 check, 2 no checksum, 3 checksum mismatch, 4 download,
+    // 5 installer not started, 6 a test run stopped before installing.
+    in property <int> error-kind;
+    in property <string> error;
+
+    callback check-now();
+    callback update();
+    callback whats-new();
+}
+
+// What the updater says, in one line.
+export global UpdateText {
+    public pure function status(state: int, version: string, mode: int) -> string {
+        if (state == 1) {
+            return @tr("Checking for updates…");
+        } else if (state == 2) {
+            return @tr("Volute is up to date.");
+        } else if (state == 3) {
+            return mode == 2
+                ? @tr("Volute {} is available. Open Volute normally, not as administrator, to install it.", version)
+                : @tr("Volute {} is available.", version);
+        } else if (state == 4) {
+            return @tr("Downloading Volute {}…", version);
+        } else if (state == 6) {
+            return @tr("Installing Volute {}…", version);
+        } else if (state == 7) {
+            return @tr("Volute {} is installed.", version);
+        }
+        return "";
+    }
+
+    public pure function failure(kind: int) -> string {
+        if (kind == 1) {
+            return @tr("Could not reach GitHub to check for updates.");
+        } else if (kind == 2) {
+            return @tr("The release has no checksum for its installer, so it was not installed.");
+        } else if (kind == 3) {
+            return @tr("The download does not match its checksum, so it was not installed.");
+        } else if (kind == 4) {
+            return @tr("The download failed.");
+        } else if (kind == 5) {
+            return @tr("The installer could not be started.");
+        } else if (kind == 6) {
+            return @tr("Test run: the installer was downloaded and checked, not run.");
+        }
+        return "";
+    }
+
+    public pure function action(mode: int) -> string {
+        return mode == 0 ? @tr("Update") : @tr("Open the release page");
+    }
+}
+
+// The flyout's line when a new version is out or was just installed.
+export component UpdateBanner inherits Rectangle {
+    height: 44px;
+    background: Theme.accent-soft;
+    HorizontalLayout {
+        padding-left: Theme.space-4;
+        padding-right: Theme.space-3;
+        spacing: Theme.space-2;
+        Text {
+            text: UpdateText.status(Updates.state, Updates.version, Updates.mode);
+            color: Theme.accent-text;
+            font-size: Theme.font-caption;
+            font-weight: Theme.weight-strong;
+            overflow: elide;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        if Updates.state == 3 && Updates.mode != 2: Button {
+            y: (parent.height - self.height) / 2;
+            height: 28px;
+            primary: true;
+            text: Updates.mode == 0 ? @tr("Update") : @tr("See");
+            clicked => { Updates.update(); }
+        }
+        if Updates.state == 7: Button {
+            y: (parent.height - self.height) / 2;
+            height: 28px;
+            text: @tr("What's new");
+            clicked => { Updates.whats-new(); }
+        }
+    }
+}
+
+// A setting: its name and what it does on the left, its control on the right.
+component SettingRow inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <bool> last;
+    min-height: 60px;
+    HorizontalLayout {
+        padding-left: Theme.space-4;
+        padding-right: Theme.space-4;
+        padding-top: Theme.space-3;
+        padding-bottom: Theme.space-3;
+        spacing: Theme.space-4;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: Theme.font-label;
+                font-weight: Theme.weight-medium;
+                wrap: word-wrap;
+            }
+            if root.detail != "": Text {
+                text: root.detail;
+                color: Theme.text-muted;
+                font-size: Theme.font-caption;
+                wrap: word-wrap;
+            }
+        }
+        @children
+    }
+    if !root.last: Rectangle {
+        x: Theme.space-4;
+        y: parent.height - 1px;
+        width: parent.width - 2 * Theme.space-4;
+        height: 1px;
+        background: Theme.line;
+    }
+}
+
+component Card inherits Rectangle {
+    border-radius: Theme.radius-card;
+    background: Theme.surface;
+    VerticalLayout {
+        @children
+    }
+}
+
+export component SettingsPanel inherits VerticalLayout {
+    spacing: Theme.space-2;
+
+    SectionTitle {
+        text: @tr("Appearance");
+    }
+    Card {
+        SettingRow {
+            title: @tr("Theme");
+            last: true;
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 252px;
+                height: 32px;
+                border-radius: Theme.radius-control;
+                background: Theme.raised;
+                HorizontalLayout {
+                padding: 3px;
+                spacing: 2px;
+                Segment {
+                    text: @tr("System");
+                    selected: Prefs.theme == 0;
+                    clicked => { Prefs.theme-picked(0); }
+                }
+                Segment {
+                    text: @tr("Dark");
+                    selected: Prefs.theme == 1;
+                    clicked => { Prefs.theme-picked(1); }
+                }
+                Segment {
+                    text: @tr("Light");
+                    selected: Prefs.theme == 2;
+                    clicked => { Prefs.theme-picked(2); }
+                }
+                }
+            }
+        }
+    }
+
+    Rectangle { height: Theme.space-3; }
+    SectionTitle {
+        text: @tr("Behaviour");
+    }
+    Card {
+        SettingRow {
+            title: @tr("Start with Windows");
+            detail: @tr("Volute waits in the notification area from the moment you sign in.");
+            Switch {
+                y: (parent.height - self.height) / 2;
+                label: @tr("Start with Windows");
+                checked: Prefs.start-with-windows;
+                enabled: Prefs.can-change-system;
+                toggled(on) => { Prefs.start-with-windows-toggled(on); }
+            }
+        }
+        SettingRow {
+            title: @tr("Keep running when the window closes");
+            detail: @tr("Closing this window leaves Volute in the notification area. Quit from its menu.");
+            last: true;
+            Switch {
+                y: (parent.height - self.height) / 2;
+                label: @tr("Keep running when the window closes");
+                checked: Prefs.close-to-tray;
+                toggled(on) => { Prefs.close-to-tray-toggled(on); }
+            }
+        }
+    }
+
+    Rectangle { height: Theme.space-3; }
+    SectionTitle {
+        text: @tr("Updates");
+    }
+    Card {
+        SettingRow {
+            title: @tr("Check for updates");
+            detail: @tr("At start and every 6 hours, Volute asks GitHub for the latest version. Nothing else is sent.");
+            Switch {
+                y: (parent.height - self.height) / 2;
+                label: @tr("Check for updates");
+                checked: Prefs.check-updates;
+                enabled: Updates.mode != 3;
+                toggled(on) => { Prefs.check-updates-toggled(on); }
+            }
+        }
+        SettingRow {
+            title: @tr("Version {}", Prefs.version);
+            detail: Updates.state == 5
+                ? UpdateText.failure(Updates.error-kind)
+                : UpdateText.status(Updates.state, Updates.version, Updates.mode);
+            last: true;
+            if Updates.state == 3 && Updates.mode != 2 && Updates.mode != 3: Button {
+                y: (parent.height - self.height) / 2;
+                primary: true;
+                text: UpdateText.action(Updates.mode);
+                clicked => { Updates.update(); }
+            }
+            if Updates.state == 7: Button {
+                y: (parent.height - self.height) / 2;
+                text: @tr("What's new");
+                clicked => { Updates.whats-new(); }
+            }
+            if Updates.state != 3 && Updates.state != 7 && Updates.mode != 3: Button {
+                y: (parent.height - self.height) / 2;
+                text: @tr("Check now");
+                enabled: Updates.state != 1 && Updates.state != 4 && Updates.state != 6;
+                clicked => { Updates.check-now(); }
+            }
+        }
+    }
+    Rectangle { vertical-stretch: 1; }
+}
+
+export component AboutPanel inherits VerticalLayout {
+    spacing: Theme.space-4;
+    alignment: start;
+
+    HorizontalLayout {
+        spacing: Theme.space-4;
+        alignment: start;
+        Image {
+            source: @image-url("../../../assets/brand/png/volute-app-icon-128.png");
+            width: 64px;
+            height: 64px;
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: "Volute";
+                color: Theme.text;
+                font-size: 24px;
+                font-weight: Theme.weight-strong;
+            }
+            Text {
+                text: @tr("Version {}", Prefs.version);
+                color: Theme.text-muted;
+            }
+        }
+    }
+    Text {
+        text: @tr("A volume mixer for Windows: every app's volume, every device, from the notification area.");
+        color: Theme.text;
+        font-size: Theme.font-label;
+        wrap: word-wrap;
+    }
+    Text {
+        text: @tr("Volute reads which apps play sound and their names and icons. It never records sound, and sends nothing but its update check to GitHub.");
+        color: Theme.text-muted;
+        wrap: word-wrap;
+    }
+    HorizontalLayout {
+        spacing: Theme.space-5;
+        alignment: start;
+        Link {
+            text: @tr("Source code");
+            clicked => { Prefs.open-link("repo"); }
+        }
+        Link {
+            text: @tr("Release notes");
+            clicked => { Prefs.open-link("notes"); }
+        }
+        Link {
+            text: @tr("Report a problem");
+            clicked => { Prefs.open-link("issues"); }
+        }
+        Link {
+            text: @tr("MIT licence");
+            clicked => { Prefs.open-link("license"); }
+        }
+    }
+    Rectangle {
+        height: 1px;
+        background: Theme.line;
+    }
+    HorizontalLayout {
+        alignment: start;
+        AboutSlint {
+            max-width: 200px;
+        }
+    }
+}

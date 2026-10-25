@@ -1,5 +1,8 @@
 // Design tokens, from docs/BRAND.md and the logo kit (assets/brand). Views use these instead of
 // literal colours and sizes. They follow Palette.color-scheme, so --dark and --light switch them.
+//
+// The rule they encode: calm at rest. Surfaces and faders are neutral; amber is the sound itself
+// (levels), violet is Volute speaking (selection, focus, an update), red cuts sound.
 
 import { Palette } from "std-widgets.slint";
 
@@ -12,42 +15,59 @@ export global Theme {
     out property <color> amber: #FFB020;
     out property <color> ink: #1B1530;
 
-    // Surfaces and text (AA for every text on its surface, in both themes)
-    out property <color> background: dark ? #15111F : #FBF8F3;
-    out property <color> surface: dark ? #1D1729 : #FFFFFF;
-    out property <color> raised: dark ? #2A2239 : #F2ECE4;
-    out property <color> border: dark ? #342B47 : #E6DFD5;
-    out property <color> text: dark ? #F6EFE6 : #1B1530;
-    out property <color> text-muted: dark ? #A99FBC : #645B74;
+    // Surfaces, from the ground up. AA for every text on every surface, in both themes.
+    out property <color> background: dark ? #131018 : #FBF8F3;
+    out property <color> surface: dark ? #1A1621 : #F4EFE7;
+    out property <color> raised: dark ? #241F2D : #ECE5DA;
+    out property <color> hover: dark ? #211C29 : #F1EBE2;
+    out property <color> line: dark ? #2B2534 : #E6DED2;
+    out property <color> text: dark ? #F4EDE3 : #1B1530;
+    // Secondary text: 7:1 on the background in both themes.
+    out property <color> text-muted: dark ? #A89FB4 : #5C546A;
+    // Figures at rest and hints: 4.5:1 at least.
+    out property <color> text-faint: dark ? #8A8296 : #6F6779;
 
-    // The band at the top of the mixer: the master, on the brand's violet in both themes
-    out property <color> band: #5B2BFF;
-    out property <color> band-text: #FFF1DE;
-    out property <color> band-muted: #FFF1DE.with-alpha(0.72);
-    out property <color> band-track: #FFFFFF.with-alpha(0.24);
-    out property <color> band-hover: #FFFFFF.with-alpha(0.12);
+    // Faders: a neutral track and fill, the live level in amber inside the fill, a light thumb.
+    out property <color> track: dark ? #2E2838 : #E3DBCF;
+    out property <color> fill: dark ? #B9B0C6 : #3B3350;
+    out property <color> fill-strong: dark ? #F4EDE3 : #1B1530;
+    out property <color> fill-muted: dark ? #4A4356 : #C4BBAE;
+    out property <color> level: dark ? #FFB020 : #E58C00;
+    out property <color> thumb: dark ? #F4EDE3 : #FFFFFF;
+    out property <color> thumb-ring: dark ? #131018 : #CFC6B8;
 
-    // Faders: the track, the value, the live level (the one accent), the thumb
-    out property <color> track: dark ? #382E4D : #E8E0F4;
-    out property <color> fill: dark ? #9076FF : #5B2BFF;
-    out property <color> level: dark ? #FFB020 : #E39200;
-    out property <color> thumb: dark ? #FFF1DE : #FFFFFF;
+    // Volute speaking: the selected device, the selected view, focus, an update.
+    out property <color> accent: dark ? #8C72FF : #5B2BFF;
+    out property <color> accent-soft: dark ? #241B44 : #ECE6FF;
+    out property <color> accent-text: dark ? #B8A8FF : #4A1FE0;
+    out property <color> on-accent: #FFFFFF;
 
     // Red only for what cuts sound: mute, an error
-    out property <color> danger: dark ? #FF6B7A : #D2304A;
+    out property <color> danger: dark ? #FF6B7A : #C8243F;
+
+    // Windows 11's interface face, with optical sizes; Segoe UI where it is missing.
+    out property <string> font-family: "Segoe UI Variable Text";
 
     // Radii, spacing, type, motion
     out property <length> radius-control: 8px;
+    out property <length> radius-row: 10px;
     out property <length> radius-card: 14px;
     out property <length> space-1: 4px;
     out property <length> space-2: 8px;
     out property <length> space-3: 12px;
     out property <length> space-4: 16px;
+    out property <length> space-5: 20px;
     out property <length> space-6: 24px;
+    out property <length> space-8: 32px;
     out property <length> font-caption: 12px;
-    out property <length> font-body: 14px;
-    out property <length> font-title: 18px;
-    out property <length> font-figure: 20px;
+    out property <length> font-body: 13px;
+    out property <length> font-label: 14px;
+    out property <length> font-title: 20px;
+    out property <length> font-figure: 13px;
+    out property <length> font-master: 30px;
+    out property <int> weight-regular: 400;
+    out property <int> weight-medium: 500;
+    out property <int> weight-strong: 600;
     out property <duration> motion-in: 120ms;
     out property <duration> motion-out: 180ms;
 }

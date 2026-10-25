@@ -56,6 +56,9 @@ Each milestone ends with its exit criteria met, checked by hand on Windows 11, `
 
 ## M4 — Distribution and updates
 
+Pulled forward at the author's request on 2026-10-25, alongside M1's day of use: the installer, `cargo xtask dist`, the updater, Settings and About, the README and the landing page are built. What is left is publishing them: the repository made public, Pages turned on, and the first release.
+
+
 * Inno Setup installer, per user, no administrator rights, start with Windows as an option.
 * Updates from the app, as Vigie and Recto do (decision 0005): check at launch and every 6 hours, one click to install, checksum verified, relaunch.
 * Release built locally with `cargo xtask dist`, publishing `SHA256SUMS` (decision 0006); landing page in French and English; About window with the Slint attribution.

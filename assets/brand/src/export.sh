@@ -24,8 +24,13 @@ done
 node src/ico.mjs icons/favicon.ico png/volute-app-icon-16.png png/volute-app-icon-32.png png/volute-app-icon-48.png
 cp logo/volute-app-icon.svg icons/favicon.svg
 
-# Logos as PNG, for documents and the README.
-for v in volute-horizontal volute-horizontal-reversed volute-symbol volute-symbol-reversed; do
+# Logos as PNG, for documents and the README: lockups at their own proportions (919 x 215).
+for v in volute-horizontal volute-horizontal-reversed; do
+  "$PY" "$RENDER" "logo/$v.svg" -o "png/$v.png" --width 1200 --height 281 >/dev/null
+  # The app's rail draws it 26 px high: 2x for 200 % scaling.
+  "$PY" "$RENDER" "logo/$v.svg" -o "png/$v-ui.png" --width 224 --height 52 >/dev/null
+done
+for v in volute-symbol volute-symbol-reversed; do
   "$PY" "$RENDER" "logo/$v.svg" -o "png/$v.png" --width 1200 --height 1200 >/dev/null
 done
 echo "export: done"

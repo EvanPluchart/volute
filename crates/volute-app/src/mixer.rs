@@ -150,9 +150,11 @@ impl Looks for ExeLooks {
     }
 }
 
-/// None, for tests and the mock: names from file names, no icons.
+/// None, for tests: names from file names, no icons.
+#[cfg(test)]
 pub struct NoLooks;
 
+#[cfg(test)]
 impl Looks for NoLooks {
     fn look(&mut self, _: &std::path::Path, _: u32) -> (Option<String>, Option<volute_shell::Icon>) {
         (None, None)

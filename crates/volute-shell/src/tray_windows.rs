@@ -1,6 +1,7 @@
 //! The tray icon on Windows (decision 0004), ported from Vigie: `Shell_NotifyIconW` with
 //! `NOTIFYICON_VERSION_4`, driven by a hidden window on a thread of its own. The thread sleeps
-//! in `GetMessageW`, so the icon costs nothing between events.
+//! in `GetMessageW`, so the icon costs nothing between events. Notifications are balloons on
+//! the same icon, which Windows shows as toasts.
 
 use std::cell::Cell;
 use std::sync::{Arc, Mutex};
@@ -14,15 +15,15 @@ use windows_sys::Win32::UI::Input::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::HiDpi::{GetDpiForSystem, GetSystemMetricsForDpi};
 use windows_sys::Win32::UI::Shell::{
-    NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION,
-    NIN_SELECT, NOTIFYICON_VERSION_4, NOTIFYICONDATAW, NOTIFYICONIDENTIFIER,
+    NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIIF_LARGE_ICON, NIIF_USER, NIM_ADD,
+    NIM_DELETE, NIM_MODIFY, NIM_SETVERSION, NIN_BALLOONUSERCLICK, NIN_SELECT, NOTIFYICON_VERSION_4, NOTIFYICONDATAW, NOTIFYICONIDENTIFIER,
     Shell_NotifyIconGetRect, Shell_NotifyIconW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu,
     DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, HICON,
     IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTCOLOR, LoadIconW, LoadImageW, MF_CHECKED, MF_SEPARATOR, MF_STRING,
-    MSG, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SM_CXSMICON,
+    MSG, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SM_CXICON, SM_CXSMICON,
     SetForegroundWindow, SetWindowLongPtrW, TPM_BOTTOMALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
     TrackPopupMenu, TranslateMessage, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
     WM_ENDSESSION, WM_INPUT, WM_LBUTTONDBLCLK, WM_MOUSEMOVE, WM_NULL, WNDCLASSW, WS_OVERLAPPED,
@@ -34,6 +35,7 @@ use crate::{TrayEvent, TrayMenu};
 /// Messages the icon sends to the window, and the ones the app posts to it.
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_UPDATE: u32 = WM_APP + 2;
+const WM_NOTIFY_USER: u32 = WM_APP + 3;
 /// Volute removes its icon. Not WM_CLOSE: other programs send that one (`taskkill` without
 /// `/F` does), and the icon must not vanish while Volute runs hidden behind it.
 const WM_SHUTDOWN: u32 = WM_APP + 4;
@@ -44,6 +46,7 @@ const MUTED_RESOURCE: u16 = 2;
 const MENU_OPEN: usize = 1;
 const MENU_QUIT: usize = 2;
 const MENU_MUTE: usize = 3;
+const MENU_SETTINGS: usize = 4;
 
 type Callback = Arc<dyn Fn(TrayEvent) + Send + Sync>;
 
@@ -55,6 +58,8 @@ struct Shared {
     shown: bool,
     /// Show the muted icon.
     muted: bool,
+    /// A notification to show (title, body), taken by the tray thread.
+    notification: Option<(String, String)>,
 }
 
 /// Lives on the tray thread, pointed to by the window's user data.
@@ -64,6 +69,8 @@ struct State {
     icon: HICON,
     /// The muted icon, resource 2 (the application icon when there is none).
     muted_icon: HICON,
+    /// The large application icon, for notifications.
+    balloon_icon: HICON,
     taskbar_created: u32,
     /// Raw mouse input is registered: the pointer is over the icon (decision 0007).
     listening: Cell<bool>,
@@ -96,6 +103,7 @@ impl Tray {
             menu,
             shown: false,
             muted: false,
+            notification: None,
         }));
         let (ready_tx, ready_rx) = std::sync::mpsc::channel::<isize>();
         let thread_shared = shared.clone();
@@ -134,6 +142,14 @@ impl Tray {
             shared.muted = muted;
         }
         self.post(WM_UPDATE);
+    }
+
+    /// Shows a notification from the icon; a click on it reports `NotificationClicked`.
+    pub(crate) fn notify(&self, title: &str, body: &str) {
+        if let Ok(mut shared) = self.shared.lock() {
+            shared.notification = Some((title.to_owned(), body.to_owned()));
+        }
+        self.post(WM_NOTIFY_USER);
     }
 
     /// Whether the icon is on screen: hiding Volute behind a missing icon would lose it.
@@ -246,6 +262,7 @@ fn run(shared: Arc<Mutex<Shared>>, callback: Callback, ready: std::sync::mpsc::S
         callback,
         icon: load_icon(SM_CXSMICON, ICON_RESOURCE),
         muted_icon: load_icon(SM_CXSMICON, MUTED_RESOURCE),
+        balloon_icon: load_icon(SM_CXICON, ICON_RESOURCE),
         listening: Cell::new(false),
         rect: Cell::new(RECT::default()),
         // SAFETY: a NUL-terminated name.
@@ -267,6 +284,7 @@ fn run(shared: Arc<Mutex<Shared>>, callback: Callback, ready: std::sync::mpsc::S
         let state = Box::from_raw(state);
         DestroyIcon(state.icon);
         DestroyIcon(state.muted_icon);
+        DestroyIcon(state.balloon_icon);
     }
 }
 
@@ -295,6 +313,7 @@ unsafe extern "system" fn window_proc(
                 WM_MOUSEMOVE => hovered(hwnd, state),
                 WM_LBUTTONDBLCLK => (state.callback)(TrayEvent::Open),
                 WM_CONTEXTMENU => show_menu(hwnd, state, x, y),
+                NIN_BALLOONUSERCLICK => (state.callback)(TrayEvent::NotificationClicked),
                 _ => {}
             }
             0
@@ -304,6 +323,20 @@ unsafe extern "system" fn window_proc(
             data.uFlags = NIF_ICON | NIF_TIP | NIF_SHOWTIP;
             // SAFETY: modifying our own icon.
             unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) };
+            0
+        }
+        WM_NOTIFY_USER => {
+            let notification = state.shared.lock().ok().and_then(|mut s| s.notification.take());
+            if let Some((title, body)) = notification {
+                let mut data = icon_data(hwnd, state);
+                data.uFlags = NIF_INFO;
+                wide_into(&title, &mut data.szInfoTitle);
+                wide_into(&body, &mut data.szInfo);
+                data.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON;
+                data.hBalloonIcon = state.balloon_icon;
+                // SAFETY: modifying our own icon.
+                unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) };
+            }
             0
         }
         // Someone else's request to close this hidden window: Volute decides when its icon goes.
@@ -431,7 +464,8 @@ fn show_menu(hwnd: HWND, state: &State, x: i32, y: i32) {
     let Ok((labels, muted)) = state.shared.lock().map(|s| (s.menu.clone(), s.muted)) else {
         return;
     };
-    let (open, mute, quit) = (wide(&labels.open), wide(&labels.mute), wide(&labels.quit));
+    let (open, mute, settings, quit) =
+        (wide(&labels.open), wide(&labels.mute), wide(&labels.settings), wide(&labels.quit));
     // SAFETY: a menu owned and destroyed here. Our window must be in the foreground for the
     // menu to close when the user clicks elsewhere, and WM_NULL afterwards lets it close
     // cleanly (documented TrackPopupMenu behaviour).
@@ -444,6 +478,7 @@ fn show_menu(hwnd: HWND, state: &State, x: i32, y: i32) {
         // Mute all: the master output, checked while it is muted.
         AppendMenuW(menu, MF_STRING | if muted { MF_CHECKED } else { 0 }, MENU_MUTE, mute.as_ptr());
         AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
+        AppendMenuW(menu, MF_STRING, MENU_SETTINGS, settings.as_ptr());
         AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
         SetForegroundWindow(hwnd);
         let command = TrackPopupMenu(
@@ -463,6 +498,7 @@ fn show_menu(hwnd: HWND, state: &State, x: i32, y: i32) {
         MENU_OPEN => (state.callback)(TrayEvent::Open),
         MENU_QUIT => (state.callback)(TrayEvent::Quit),
         MENU_MUTE => (state.callback)(TrayEvent::ToggleMute),
+        MENU_SETTINGS => (state.callback)(TrayEvent::Settings),
         _ => {}
     }
 }
@@ -502,6 +538,7 @@ mod tests {
             TrayMenu {
                 open: "Open".into(),
                 mute: "Mute all".into(),
+                settings: "Settings".into(),
                 quit: "Quit".into(),
             },
             Arc::new(|_| {}),
@@ -509,6 +546,7 @@ mod tests {
             panic!("no tray window");
         };
         tray.set_tooltip("Volute test · 50 %");
+        tray.set_muted(true);
         drop(tray);
     }
 }

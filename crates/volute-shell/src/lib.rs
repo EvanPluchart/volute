@@ -1,5 +1,6 @@
-//! Volute's desktop integration (docs/ARCHITECTURE.md, decision 0004): the tray icon, the
-//! single instance and the settings file. No UI here; the app gives labels and callbacks.
+//! Volute's desktop integration (docs/ARCHITECTURE.md, decisions 0004 and 0005): the tray icon,
+//! the single instance, the settings file, starting with Windows and updates. No UI here; the
+//! app gives labels and callbacks.
 
 #[cfg(windows)]
 use std::sync::Arc;
@@ -7,12 +8,18 @@ use std::sync::Arc;
 #[cfg(windows)]
 mod close_guard_windows;
 #[cfg(windows)]
+mod desktop_windows;
+#[cfg(windows)]
 mod exe_windows;
 #[cfg(windows)]
 mod instance_windows;
 pub mod settings_file;
 #[cfg(windows)]
+mod startup_windows;
+#[cfg(windows)]
 mod tray_windows;
+#[cfg(windows)]
+mod update_windows;
 
 /// An icon as straight RGBA pixels, row by row.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -103,6 +110,10 @@ pub enum TrayEvent {
     Quit,
     /// "Mute all" in the menu: mute or unmute the master output.
     ToggleMute,
+    /// "Settings" in the menu.
+    Settings,
+    /// A click on a notification the icon showed.
+    NotificationClicked,
     /// The mouse wheel over the icon: 120 per notch, positive away from the user (decision 0007).
     Wheel { delta: i32 },
 }
@@ -113,6 +124,7 @@ pub struct TrayMenu {
     pub open: String,
     /// "Mute all", checked while the master output is muted.
     pub mute: String,
+    pub settings: String,
     pub quit: String,
 }
 
@@ -157,12 +169,165 @@ impl Tray {
         let _ = tooltip;
     }
 
+    /// Shows a notification from the icon (a toast on Windows 10 and 11).
+    pub fn notify(&self, title: &str, body: &str) {
+        #[cfg(windows)]
+        self.inner.notify(title, body);
+        #[cfg(not(windows))]
+        let _ = (title, body);
+    }
+
     /// Shows the muted icon (the master output is muted) or the normal one.
     pub fn set_muted(&self, muted: bool) {
         #[cfg(windows)]
         self.inner.set_muted(muted);
         #[cfg(not(windows))]
         let _ = muted;
+    }
+}
+
+/// Opens an `https:` page in the default browser; anything else is refused.
+pub fn open_url(url: &str) -> bool {
+    if !url.starts_with("https://") {
+        return false;
+    }
+    #[cfg(windows)]
+    return desktop_windows::open_url(url);
+    #[cfg(not(windows))]
+    false
+}
+
+/// Starting Volute when the user signs in (decision 0004): the value the installer sets.
+pub mod startup {
+    /// Whether Windows starts this Volute at sign-in. A value naming another copy counts as
+    /// off: turning it on points it here.
+    pub fn enabled() -> bool {
+        #[cfg(windows)]
+        {
+            let Ok(exe) = std::env::current_exe() else { return false };
+            crate::startup_windows::command().is_some_and(|command| {
+                command.trim().trim_matches('"').eq_ignore_ascii_case(&exe.to_string_lossy())
+            })
+        }
+        #[cfg(not(windows))]
+        false
+    }
+
+    /// Starts this executable at sign-in, or stops starting Volute. `false` if the change failed.
+    pub fn set(on: bool) -> bool {
+        #[cfg(windows)]
+        {
+            if on {
+                std::env::current_exe().is_ok_and(|exe| crate::startup_windows::set(Some(&exe)))
+            } else {
+                crate::startup_windows::set(None)
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = on;
+            false
+        }
+    }
+}
+
+/// Updates from the app (decision 0005): the network and file steps. Which version is newer
+/// and which checksum to expect is `volute-core::update`'s part.
+pub mod update {
+    use std::path::{Path, PathBuf};
+
+    /// How this copy of Volute was installed.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Install {
+        /// By the installer, for this account: it can update itself without a prompt.
+        PerUser,
+        /// By the installer, for every account (Program Files).
+        AllUsers,
+        /// Not by the installer (the zip, or a build).
+        Portable,
+    }
+
+    /// Whether this system can check for and install updates.
+    pub fn supported() -> bool {
+        cfg!(windows)
+    }
+
+    /// Where `url` redirects to, without following it.
+    pub fn redirect_of(url: &str) -> Result<String, String> {
+        #[cfg(windows)]
+        return crate::update_windows::redirect_of(url);
+        #[cfg(not(windows))]
+        {
+            let _ = url;
+            Err("not supported on this system".into())
+        }
+    }
+
+    /// The body of `url` as text (redirects followed).
+    pub fn text(url: &str) -> Result<String, String> {
+        #[cfg(windows)]
+        return crate::update_windows::text(url);
+        #[cfg(not(windows))]
+        {
+            let _ = url;
+            Err("not supported on this system".into())
+        }
+    }
+
+    /// Saves the body of `url` (redirects followed) to `path`.
+    pub fn download(url: &str, path: &Path) -> Result<(), String> {
+        #[cfg(windows)]
+        return crate::update_windows::download(url, path);
+        #[cfg(not(windows))]
+        {
+            let _ = (url, path);
+            Err("not supported on this system".into())
+        }
+    }
+
+    /// The SHA-256 of a file.
+    pub fn sha256_file(path: &Path) -> Option<[u8; 32]> {
+        #[cfg(windows)]
+        return crate::update_windows::sha256_file(path);
+        #[cfg(not(windows))]
+        {
+            let _ = path;
+            None
+        }
+    }
+
+    /// This process runs with administrator rights: it must never run a downloaded file.
+    pub fn is_elevated() -> bool {
+        #[cfg(windows)]
+        return crate::update_windows::is_elevated();
+        #[cfg(not(windows))]
+        false
+    }
+
+    /// Which install this process runs from.
+    pub fn install_kind() -> Install {
+        #[cfg(windows)]
+        return crate::update_windows::install_kind();
+        #[cfg(not(windows))]
+        Install::Portable
+    }
+
+    /// A new, empty folder for one download, under the temporary folder.
+    pub fn fresh_folder() -> Option<PathBuf> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("volute-update-{}-{stamp}", std::process::id()));
+        // `create_dir` fails if it exists: the folder is ours alone.
+        std::fs::create_dir(&dir).ok()?;
+        Some(dir)
+    }
+
+    /// Starts the installer at `path` with `args`, detached, by its full path; this process
+    /// should then quit.
+    pub fn start_installer(path: &Path, args: &[&str]) -> bool {
+        path.is_absolute() && std::process::Command::new(path).args(args).spawn().is_ok()
     }
 }
 

@@ -4,10 +4,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cli;
+mod demo;
 mod mixer;
 mod model;
 mod translations;
 mod ui;
+mod update;
 
 use std::time::Duration;
 
@@ -19,7 +21,7 @@ use volute_core::settings::{Settings, Theme};
 use volute_shell::settings_file;
 
 use crate::mixer::{
-    Backend, Command, ExeLooks, Frame, InFlight, Input, Looks, MakeBackend, NoLooks, Options, SaveMemory,
+    Backend, Command, ExeLooks, Frame, InFlight, Input, Looks, MakeBackend, Options, SaveMemory,
 };
 
 slint::include_modules!();
@@ -42,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     // A test run (--no-settings, or --mock, whose demo apps have real executable paths) takes
     // no single instance and neither reads nor writes remembered volumes: it never reaches the
     // user's Volute or a real app.
-    let test_run = options.no_settings || options.mock;
+    let test_run = options.test_run();
     // One Volute per session: a second launch opens the first one's flyout and exits
     // (decision 0004).
     let instance = if test_run {
@@ -87,15 +89,33 @@ fn main() -> anyhow::Result<()> {
 
     // The audio thread stops on Command::Quit; Core Audio's callbacks share its channel.
     let (inputs, receiver) = flume::unbounded::<Input>();
-    ui::install(&app, inputs.clone(), scheme, !options.no_tray);
+    let check_updates = settings.check_updates;
+    ui::install(
+        &app,
+        ui::Setup { commands: inputs.clone(), scheme, with_tray: !options.no_tray, settings, test_run },
+    );
     app.set_tab(options.tab);
+    // Kept by the updater, which releases it just before an installer replaces this Volute.
+    update::hold_instance(instance);
+    if options.may_check_updates() {
+        let current = options.pretend_version.clone().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned());
+        ui::start_updates(check_updates, current, options.updated);
+    } else if options.updated {
+        ui::start_updates(false, env!("CARGO_PKG_VERSION").to_owned(), true);
+    }
+    if let Some(version) = options.offer_update.clone() {
+        ui::set_update(|view| {
+            view.state = update::AVAILABLE;
+            view.version = version;
+        });
+    }
 
     let make: MakeBackend = if options.mock {
         Box::new(|| Ok(Box::new(MockAudio::demo()) as Backend))
     } else {
         Box::new(make_windows_backend)
     };
-    let looks: Box<dyn Looks> = if options.mock { Box::new(NoLooks) } else { Box::new(ExeLooks) };
+    let looks: Box<dyn Looks> = if options.mock { Box::new(demo::DemoLooks) } else { Box::new(ExeLooks) };
     // Volumes the user set in Volute, per app; a test run neither reads nor writes them.
     let memory = (!test_run).then(|| {
         settings_file::load_named(settings_file::VOLUMES)
@@ -134,9 +154,6 @@ fn main() -> anyhow::Result<()> {
         // As a click at the far bottom right would: placement keeps it inside the work area.
         slint::Timer::single_shot(Duration::from_millis(300), || ui::open_flyout(i32::MAX / 2, i32::MAX / 2));
     }
-    if options.about {
-        ui::open_about();
-    }
 
     // Runs until Quit (tray menu, sign-out) or the main window closes.
     slint::run_event_loop_until_quit().context("running the event loop")?;
@@ -150,7 +167,7 @@ fn main() -> anyhow::Result<()> {
     // 2: every thread gets an explicit Quit (the tray's is its removal, step 5).
     let _ = inputs.send(Input::Ui(Command::Quit));
     // 3: a launch from now on starts a new Volute instead of signalling this one.
-    drop(instance);
+    update::release_instance();
     // 4: the windows go.
     let _ = app.hide();
     // 5: the tray icon goes (and the flyout with it).

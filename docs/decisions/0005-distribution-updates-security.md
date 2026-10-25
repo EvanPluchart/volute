@@ -29,6 +29,8 @@ This is Vigie's design (its decision 0012), proven over four releases:
 * **Where it does not install:**
   * an elevated Volute never runs a downloaded file;
   * a portable copy opens the release page.
+* **Which copy is installed** is read from the installer's uninstall key (`InstallLocation` under its `AppId`, per user), as Recto does, not guessed from the path.
+* **Test runs never go online** (`--mock`, `--no-settings`, `--no-update-check`). `--pretend-version=X.Y.Z` makes a run behave as an older version, by hand only; `--offer-update=X.Y.Z` shows the offer without any request, for screenshots.
 
 ## Security
 

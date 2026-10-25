@@ -6,3 +6,4 @@ pub mod apps;
 pub mod curve;
 pub mod memory;
 pub mod settings;
+pub mod update;
