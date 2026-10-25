@@ -73,7 +73,7 @@ pub trait Audio: Send {
 * Slint, every view in `ui/*.slint`, every token in `ui/theme.slint` (from `docs/BRAND.md`). Volute draws its own controls (sliders, meters, switches, menus): native widgets do not match the art direction.
 * **Windows:**
   * the **mixer flyout**, compact, opened from the tray or a shortcut, closing when it loses focus;
-  * the **main window**, with Mixer, Devices, Profiles and Settings;
+  * the **main window**: a rail with Mixer, Devices, Settings and About (Profiles come in M3);
   * the **OSD**, a borderless, topmost window that never takes focus.
 * The audio thread sends frames with `slint::invoke_from_event_loop`, at most one in flight. Models are patched (`set_row_data`, inserts, removals), never replaced.
 
@@ -84,7 +84,9 @@ pub trait Audio: Send {
 | UI (main) | Slint windows | Renders, patches models, sends commands |
 | audio | the `Audio` backend (COM, MTA) | Applies commands, turns COM events into model updates, reads peaks while a meter shows |
 | hook | the `WH_KEYBOARD_LL` hook and its message loop | Filters volume keys and shortcuts, posts them, returns immediately |
-| tray | the tray window and its message loop | Tray clicks, scroll, menu |
+| tray | the tray window and its message loop | Tray clicks, scroll, menu, notifications |
+| update | nothing but its timer | One HTTPS request at start (3 s) and every 6 hours; parks in between (decision 0005). Never joined: it holds nothing |
+| download | the update's files while they download | Fetches, verifies the signature and the checksum, hands the held installer to the UI thread, ends |
 | COM callbacks | Windows' | Push events into the audio thread's channel; nothing else |
 
 * Commands go UI → audio over a `flume` channel. Events and frames go back through `invoke_from_event_loop`.
@@ -104,7 +106,8 @@ pub trait Audio: Send {
 
 * Meters read peaks at 30 Hz only while a meter is visible. Nothing ticks when nothing is shown.
 * From a key press to the volume being applied: under 16 ms. The OSD appears in the next frame.
-* **The open state is allowed 4 % for now.** With Slint 1.18 on winit and the software renderer, every meter update renders twice, whatever the window holds (measured in M0: 2.6 to 3.4 %). Volute's own meter control in the design track comes back to the 2 % target.
+* **The open state is allowed 4 % for now.** With Slint 1.18 on winit and the software renderer, every meter update renders twice, whatever the window holds (measured in M0: 2.6 to 3.4 %). After the redesign (2026-10-25), on the mock, the worst case where every row moves every frame: 3.0 % with the main window open, 2.95 % with the flyout, 0.000 % and 3.5 MB idle (`docs/audits/2026-10-25-performance.md`).
+* **A window must not grow on screen.** Slint 1.18 redraws only what changed, so a part of a window that was off screen, or uncovered by a resize the renderer did not see, stays blank. The main window is sized before it shows; a flyout whose rows change its height is opened again at the new height.
 * `cargo xtask bench-overhead` measures the idle and open states, run by hand on an idle machine; a release checks it.
 
 ## Conventions

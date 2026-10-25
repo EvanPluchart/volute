@@ -41,7 +41,7 @@ Volute stays in the tray all day, so it is built to cost nothing while it waits.
 | Mixer open, meters running | 2 to 4 % | about 6 MB |
 | Applying a volume | 0.12 ms | |
 
-It is Rust and [Slint](https://slint.dev) with a software renderer: no browser engine, no runtime to install, one 6 MB executable. Volume changes and device switches come from Windows' own audio events; nothing polls except the meters, and only while you look at them.
+It is Rust and [Slint](https://slint.dev) with a software renderer: no browser engine, no runtime to install: a 6.4 MB installer, one executable. Volume changes and device switches come from Windows' own audio events; nothing polls except the meters, and only while you look at them.
 
 ## What it reads, and what it never does
 
