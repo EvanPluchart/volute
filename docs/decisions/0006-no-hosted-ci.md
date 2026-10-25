@@ -15,5 +15,5 @@ M0 added a GitHub Actions workflow on `windows-latest`. The repository is privat
 
 ## Consequences
 
-* Nothing checks a push automatically: running `cargo xtask check` first is the author's and the agents' discipline (CLAUDE.md).
+* Nothing checks a push automatically: running `cargo xtask check` first is the author's and the agents' discipline.
 * Coming back to a hosted CI (a public repository gets free minutes) takes a new decision record. M0's workflow is in the history (commit `b9c2e44`).

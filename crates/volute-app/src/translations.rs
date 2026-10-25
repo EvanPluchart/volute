@@ -1,4 +1,4 @@
-//! Checks that every interface string has its French translation (CLAUDE.md).
+//! Checks that every interface string has its French translation.
 
 #[cfg(test)]
 mod tests {

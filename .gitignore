@@ -5,3 +5,10 @@ dist/
 .agents/
 .claude/skills/
 .claude/settings.local.json
+
+# Kept on the author's machine, out of the public repository: the agent guide, the original
+# brief, and working notes (UX audits, boards, captures).
+CLAUDE.md
+AGENTS.md
+docs/PROMPT.md
+docs/ux/

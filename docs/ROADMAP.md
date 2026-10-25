@@ -21,7 +21,7 @@ Each milestone ends with its exit criteria met, checked by hand on Windows 11, `
 * `docs/BRAND.md` turned into tokens in `ui/theme.slint`: colours (light and dark), type, spacing, radii, motion.
 * Logo and app icon with the `logo-design` skill (brief in BRAND.md): concepts first, then the kit for the chosen one.
 * Volute's own controls: slider with meter, mute toggle, switch, segmented control, menu, tooltip.
-* A UX audit at the end of each milestone, in `docs/ux/`.
+* A UX audit at the end of each milestone (working notes, kept out of the repository).
 
 ## M1 — The mixer
 
