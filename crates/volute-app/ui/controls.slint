@@ -219,6 +219,25 @@ export component Glyph inherits Path {
         : "";
 }
 
+// Gives a clickable control the keyboard: it takes focus with Tab, Space or Enter activates
+// it, and a violet ring shows where the focus is. Placed under the control's TouchArea.
+export component Activator inherits FocusScope {
+    in property <length> radius;
+    callback activated();
+    key-pressed(event) => {
+        if (event.text == Key.Space || event.text == Key.Return) {
+            root.activated();
+            return accept;
+        }
+        reject
+    }
+    if root.has-focus: Rectangle {
+        border-width: 2px;
+        border-color: Theme.accent;
+        border-radius: root.radius;
+    }
+}
+
 // A round button holding a glyph, for the master and the microphone.
 export component GlyphButton inherits Rectangle {
     in property <string> label;
@@ -230,6 +249,11 @@ export component GlyphButton inherits Rectangle {
     accessible-role: button;
     accessible-label: root.label;
     accessible-action-default => { root.clicked(); }
+
+    Activator {
+        radius: root.width / 2;
+        activated => { root.clicked(); }
+    }
 
     touch := TouchArea {
         mouse-cursor: pointer;
@@ -265,6 +289,10 @@ export component Button inherits Rectangle {
         font-size: Theme.font-body;
         font-weight: Theme.weight-medium;
     }
+    Activator {
+        radius: Theme.radius-control;
+        activated => { if (root.enabled) { root.clicked(); } }
+    }
     touch := TouchArea {
         enabled: root.enabled;
         mouse-cursor: root.enabled ? pointer : default;
@@ -280,6 +308,10 @@ export component Link inherits Text {
     font-weight: Theme.weight-medium;
     accessible-role: button;
     accessible-action-default => { root.clicked(); }
+    Activator {
+        radius: 4px;
+        activated => { root.clicked(); }
+    }
     touch := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
@@ -323,6 +355,10 @@ export component Switch inherits Rectangle {
         border-radius: 8px;
         background: root.checked ? Theme.on-accent : Theme.text-muted;
     }
+    Activator {
+        radius: root.height / 2;
+        activated => { root.flip(); }
+    }
     TouchArea {
         enabled: root.enabled;
         mouse-cursor: root.enabled ? pointer : default;
@@ -351,6 +387,10 @@ export component Segment inherits Rectangle {
         color: root.selected ? Theme.text : Theme.text-muted;
         font-size: Theme.font-body;
         font-weight: root.selected ? Theme.weight-strong : Theme.weight-medium;
+    }
+    Activator {
+        radius: 6px;
+        activated => { root.clicked(); }
     }
     touch := TouchArea {
         mouse-cursor: pointer;
@@ -417,6 +457,10 @@ export component AppIcon inherits Rectangle {
         stroke-width: 2.5px;
     }
 
+    Activator {
+        radius: Theme.radius-control;
+        activated => { root.toggled(); }
+    }
     touch := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.toggled(); }

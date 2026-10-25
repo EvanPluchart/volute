@@ -4,7 +4,7 @@
 
 import { Palette } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { Glyph } from "controls.slint";
+import { Activator, Glyph } from "controls.slint";
 import { AppList, DevicesPanel, Footer, Master, Mixer, SectionTitle } from "mixer.slint";
 import { AboutPanel, Prefs, SettingsPanel, UpdateBanner, Updates, UpdateText } from "settings.slint";
 
@@ -59,7 +59,7 @@ export component Flyout inherits Window {
     default-font-size: Theme.font-body;
     default-font-family: Theme.font-family;
 
-    FocusScope {
+    keys := FocusScope {
         key-pressed(event) => {
             if (event.text == Key.Escape) {
                 root.dismiss();
@@ -67,8 +67,6 @@ export component Flyout inherits Window {
             }
             reject
         }
-    }
-
     layout := VerticalLayout {
         if Updates.state == 3 || Updates.state == 7: UpdateBanner { }
         Rectangle {
@@ -86,6 +84,9 @@ export component Flyout inherits Window {
         }
         Footer { }
     }
+    }
+
+    init => { keys.focus(); }
 
     Rectangle {
         border-width: 1px;
@@ -134,6 +135,10 @@ component NavItem inherits Rectangle {
             vertical-alignment: center;
             horizontal-stretch: 1;
         }
+    }
+    Activator {
+        radius: Theme.radius-control;
+        activated => { root.clicked(); }
     }
     touch := TouchArea {
         mouse-cursor: pointer;

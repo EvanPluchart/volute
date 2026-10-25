@@ -2,7 +2,7 @@
 // models of the `Mixer` global; the views only read them and report what the hand does.
 
 import { Theme } from "theme.slint";
-import { AppIcon, Button, Fader, Glyph, GlyphButton, Meter, MicGlyph, SpeakerGlyph } from "controls.slint";
+import { Activator, AppIcon, Button, Fader, Glyph, GlyphButton, Meter, MicGlyph, SpeakerGlyph } from "controls.slint";
 
 export struct AppRow {
     key: string,
@@ -110,6 +110,10 @@ component OutputPicker inherits VerticalLayout {
                 color: Theme.accent-text;
             }
         }
+        Activator {
+            radius: Theme.radius-control;
+            activated => { Mixer.default-picked(device.id); root.picked(); }
+        }
         line := TouchArea {
             mouse-cursor: pointer;
             clicked => {
@@ -176,6 +180,10 @@ export component Master inherits VerticalLayout {
                     height: 16px;
                     color: Theme.text-muted;
                 }
+            }
+            Activator {
+                radius: Theme.radius-control;
+                activated => { root.picking = !root.picking; }
             }
             pick := TouchArea {
                 mouse-cursor: pointer;
@@ -352,6 +360,10 @@ export component Footer inherits Rectangle {
                     color: Theme.text-muted;
                 }
             }
+            Activator {
+                radius: Theme.radius-control;
+                activated => { Mixer.open-main(); }
+            }
             open := TouchArea {
                 mouse-cursor: pointer;
                 clicked => { Mixer.open-main(); }
@@ -502,6 +514,10 @@ export component DevicesPanel inherits VerticalLayout {
                                     color: Theme.text-muted;
                                     font-size: 11px;
                                     font-weight: Theme.weight-medium;
+                                }
+                                Activator {
+                                    radius: 11px;
+                                    activated => { Mixer.default-picked(device.id); }
                                 }
                                 make-touch := TouchArea {
                                     mouse-cursor: pointer;
