@@ -5,7 +5,7 @@ The static page for GitHub Pages, in French (`index.html`) and English (`en/inde
 * **Design:** `DESIGN.md`; the brand is in `../docs/BRAND.md`.
 * **Screenshots:** the real app on its demo backend, never the author's own apps:
   * flyouts at 2x: `SLINT_SCALE_FACTOR=2 volute --mock --no-settings --dark --flyout=center --lang=fr|en` (add `--offer-update=0.2.0` for the update line);
-  * the main window at 1.5x: `SLINT_SCALE_FACTOR=1.5 volute --mock --no-settings --no-tray --light --open --lang=fr|en`, cropped of its 8 px invisible border;
+  * the main window at 1.25x: `SLINT_SCALE_FACTOR=1.25 volute --mock --no-settings --no-tray --light --open --lang=fr|en`, cropped of its 8 px invisible border;
   * captured with PrintWindow (`docs/ux` has the scripts' description).
 * **Social images:** `assets/og.png` and `assets/og-en.png`, from `assets/og-source.html#fr|#en` with headless Chrome at 1200 × 630.
 * **Publish** (decision 0011): once the repository is public, enable Pages with "GitHub Actions" as its source, then run the Pages workflow by hand (`.github/workflows/pages.yml`). The page expects `https://evanpluchart.github.io/volute/`; every asset path is relative.
