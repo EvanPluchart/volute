@@ -8,5 +8,5 @@ The static page for GitHub Pages, in French (`index.html`) and English (`en/inde
   * the main window at 1.25x: `SLINT_SCALE_FACTOR=1.25 volute --mock --no-settings --no-tray --light --open --lang=fr|en`, cropped of its 8 px invisible border;
   * captured with PrintWindow (`docs/ux` has the scripts' description).
 * **Social images:** `assets/og.png` and `assets/og-en.png`, from `assets/og-source.html#fr|#en` with headless Chrome at 1200 × 630.
-* **Publish** (decision 0011): once the repository is public, enable Pages with "GitHub Actions" as its source, then run the Pages workflow by hand (`.github/workflows/pages.yml`). The page expects `https://evanpluchart.github.io/volute/`; every asset path is relative.
+* **Publish** (decision 0011): Pages serves the `gh-pages` branch, the contents of `site/` with a `.nojekyll`, pushed by hand; there is no workflow. The page expects `https://evanpluchart.github.io/volute/`; every asset path is relative.
 * **Downloads** point to `releases/latest`, which works for visitors only once the repository is public and a release is published.
