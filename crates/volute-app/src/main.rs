@@ -64,11 +64,15 @@ fn main() -> anyhow::Result<()> {
     };
 
     // Settings from the file, flags on top for this session only (never written back).
-    let settings = if options.no_settings {
+    let mut settings = if options.no_settings {
         Settings::default()
     } else {
         settings_file::load().map(|text| Settings::parse(&text)).unwrap_or_default()
     };
+    // A test flag, never saved: only test runs take it.
+    if options.close_to_tray && test_run {
+        settings.close_to_tray = true;
+    }
     let theme = match options.dark {
         Some(true) => Theme::Dark,
         Some(false) => Theme::Light,

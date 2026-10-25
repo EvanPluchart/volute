@@ -452,6 +452,32 @@ mod tests {
 
     const AREA: Rect = Rect { x: 0, y: 0, width: 1920, height: 1032 };
 
+    /// The installer is held open (others may only read it) while it starts: Windows must still
+    /// run it, and nobody may replace it. A harmless program stands in for the installer.
+    #[cfg(windows)]
+    #[test]
+    fn a_held_installer_still_starts_and_cannot_be_replaced() {
+        let dir = std::env::temp_dir().join(format!("volute-held-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("stand-in.exe");
+        let system = std::env::var_os("SystemRoot").map(std::path::PathBuf::from).expect("SystemRoot");
+        std::fs::copy(system.join("System32").join("where.exe"), &exe).unwrap();
+        let digest = update::sha256(&std::fs::read(&exe).unwrap()).unwrap();
+
+        let mut wrong = digest;
+        wrong[0] ^= 1;
+        assert!(update::open_checked(&exe, wrong).is_none(), "a mismatch is refused");
+
+        let held = update::open_checked(&exe, digest).expect("matches");
+        assert!(std::fs::OpenOptions::new().write(true).open(&exe).is_err(), "nobody can write it");
+        assert!(std::fs::remove_file(&exe).is_err(), "nobody can delete it");
+        assert!(update::start_installer(held, &["/?"]), "Windows runs it all the same");
+
+        // The stand-in exits at once; then the folder can go.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn opens_above_a_bottom_taskbar_inside_the_work_area() {
         // A click on the tray at the bottom right: above it, kept off the screen edge.

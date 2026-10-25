@@ -12,7 +12,7 @@ A volume mixer for Windows 10 and 11, native, light, and pleasant to touch.</p>
   <img src="docs/screenshots/flyout-dark.png" alt="Volute's mixer opened from the tray: the master output, then one line per app with its icon, volume and live level, then the microphone" width="360">
 </p>
 
-> **Status: early.** The mixer works and is in daily use by its author; there is no public release yet. The volume keys and their on-screen display come next ([roadmap](docs/ROADMAP.md)).
+> **Status: early.** The mixer works; it is awaiting its first full day of use, and there is no public release yet. The volume keys and their on-screen display come next ([roadmap](docs/ROADMAP.md)).
 
 ## What it does
 

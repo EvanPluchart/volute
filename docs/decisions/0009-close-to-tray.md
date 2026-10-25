@@ -16,4 +16,4 @@ Volute lives in the tray: the flyout is how it is used day to day, and the main 
 ## Consequences
 
 * 0004's integration test keeps its meaning: with the setting off (the default, and every test run's), closing the window ends the process, with or without the tray.
-* Test runs (`--no-settings`, `--mock`) can turn the setting on for the session, and never save it.
+* Test runs (`--no-settings`, `--mock`) can turn the setting on for the session, and never save it. `--close-to-tray` does it from the command line; `quits_on_close` checks that closing still ends Volute without a tray icon, and keeps it running with one.

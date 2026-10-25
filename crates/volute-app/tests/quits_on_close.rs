@@ -59,3 +59,35 @@ fn closing_the_window_ends_the_process() {
 fn closing_the_window_ends_the_process_with_a_tray_icon() {
     closes_with(&["--open"]);
 }
+
+/// "Keep running when the window closes" (decision 0009) needs a tray icon on screen: without
+/// one, closing still ends the process.
+#[cfg(windows)]
+#[test]
+fn closing_to_the_tray_without_an_icon_still_ends_the_process() {
+    closes_with(&["--open", "--no-tray", "--close-to-tray"]);
+}
+
+/// With the icon there, the same close leaves Volute running in the tray.
+#[cfg(windows)]
+#[test]
+fn closing_to_the_tray_keeps_volute_running_behind_its_icon() {
+    use std::process::Command;
+    use std::time::Duration;
+
+    let mut volute = Command::new(env!("CARGO_BIN_EXE_volute"))
+        .args(["--mock", "--no-settings", "--open", "--close-to-tray"])
+        .spawn()
+        .expect("volute starts");
+    std::thread::sleep(Duration::from_secs(3));
+    let status = Command::new("taskkill")
+        .args(["/PID", &volute.id().to_string()])
+        .output()
+        .expect("taskkill runs");
+    assert!(status.status.success(), "the close request was delivered");
+    std::thread::sleep(Duration::from_secs(3));
+    let still_running = volute.try_wait().expect("status").is_none();
+    let _ = volute.kill();
+    let _ = volute.wait();
+    assert!(still_running, "the window hid and Volute stayed in the tray");
+}
